@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-[ -n "$REPO_DIR" ] && [ -n "$REMOTE_DIR" ] || usage
+{ [ -n "$REPO_DIR" ] && [ -n "$REMOTE_DIR" ]; } || usage
 [ -n "$HOST" ] || { echo "publish-repo.sh: no host set: pass --host or set PUBLISH_HOST" >&2; usage; }
 if [ "$ABI_SUBDIR" -eq 1 ]; then
 	[ -n "$ABI" ] || { echo "publish-repo.sh: pass --abi (e.g. FreeBSD:14:amd64 for OPNsense 25.7/26.1, FreeBSD:15:amd64 for 26.7)" >&2; usage; }

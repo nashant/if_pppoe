@@ -529,10 +529,10 @@ fi
 
 # --- lab mode (--target-kernel) -------------------------------------------------
 command -v config >/dev/null 2>&1 || die "config(8) not found; this must run on a FreeBSD host"
-[ -f "$LAB_SMP_KERNEL" ] && [ -f "$LAB_SMP_KBD_FILE" ] || {
+if [ ! -f "$LAB_SMP_KERNEL" ] || [ ! -f "$LAB_SMP_KBD_FILE" ]; then
 	echo "build-all.sh: LAB_HOME=$LAB_HOME has no collected kernel/SMP (run lab/vm/build-kernel.sh collect there first)" >&2
 	exit 1
-}
+fi
 LAB_SMP_KBD=$(cat "$LAB_SMP_KBD_FILE")
 [ -d "$LAB_SMP_KBD" ] || die "$LAB_SMP_KBD_FILE names a KERNBUILDDIR that doesn't exist: $LAB_SMP_KBD"
 [ -d "$LAB_SYSDIR" ] || die "LAB_HOME=$LAB_HOME has no src/sys (SYSDIR)"

@@ -42,7 +42,7 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
-[ -n "$VERSIONS" ] && [ -n "$OUT" ] || usage
+{ [ -n "$VERSIONS" ] && [ -n "$OUT" ]; } || usage
 [ -f "$VERSIONS" ] || die "$VERSIONS not found"
 command -v jq >/dev/null 2>&1 || die "jq not installed"
 command -v strings >/dev/null 2>&1 || die "strings not installed (binutils)"
