@@ -58,6 +58,16 @@ def test_seed_embeds_only_api_secret_hash():
     assert item.findtext("secret").startswith("$6$")
 
 
+def test_seed_well_formed_when_values_contain_double_dash():
+    # token_urlsafe can emit "--", which is illegal inside an XML comment:
+    # no per-run value may land in the template's header comment.
+    creds = _creds()
+    creds["DUT_API_KEY"] = "a--b" + creds["DUT_API_KEY"]
+    out = _render(creds)
+    assert out.count(creds["DUT_API_KEY"]) == 1
+    assert ET.fromstring(out).findtext("system/user/apikeys/item/key") == creds["DUT_API_KEY"]
+
+
 def test_seed_pppoe_account_from_run_values():
     creds = _creds()
     ppp = ET.fromstring(_render(creds)).find("ppps/ppp")

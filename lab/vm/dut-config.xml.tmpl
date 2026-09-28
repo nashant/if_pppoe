@@ -10,8 +10,10 @@
   are kept close to that stock template; only hostname, users, interfaces and
   ppps differ. Booted end to end on 2026-09-28 (see lab/vm/README.md "dut").
 
-  @API_KEY@, @API_SECRET_HASH@, @ROOT_AUTHORIZED_KEYS_B64@, @PPPOE_USERNAME@,
-  @PPPOE_PASSWORD_B64@, @PPPOE_SERVICE_NAME@ are filled in by make-dut-seed.py
+  The API_KEY, API_SECRET_HASH, ROOT_AUTHORIZED_KEYS_B64, PPPOE_USERNAME,
+  PPPOE_PASSWORD_B64 and PPPOE_SERVICE_NAME placeholders (each wrapped in
+  at signs; not spelled out here, or render() would paste per-run values
+  into this comment) are filled in by make-dut-seed.py
   from per-run values plugin-roundtrip.sh generates (nothing here is a
   standing credential; see that script).
 
