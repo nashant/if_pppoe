@@ -1,0 +1,40 @@
+#!/bin/sh
+# On upgrade, leave a loaded module resident (a live .ko is read fully into
+# memory at kldload time, so replacing the on-disk file doesn't disturb it).
+if [ -n "${PKG_UPGRADE:-}" ]; then
+	exit 0
+fi
+
+if ! kldstat -q -m if_pppoe 2>/dev/null; then
+	exit 0
+fi
+
+# MOD_UNLOAD returns 0 unconditionally (sys/net/if_pppoe.c), so kldunload
+# is never refused with EBUSY just because a clone/session is live -- it
+# would tear one down without the engine's PADT/down path or a fallback to
+# mpd5. Refuse ourselves instead: never unload while any pppoe clone or
+# engine registration exists: if-pppoe's own +PRE_DEINSTALL tears those
+# down first when it runs (normal GUI-removal order), so by the time it
+# has, this check sees none left; a truly standalone
+# `pkg delete if-pppoe-kmod` with a session up leaves the module resident.
+busy=0
+if [ -n "$(ifconfig -g pppoe 2>/dev/null)" ]; then
+	busy=1
+fi
+if [ -d /var/run/if_pppoe/reg ] && [ -n "$(find /var/run/if_pppoe/reg -maxdepth 1 -name '*.json' -print -quit 2>/dev/null)" ]; then
+	busy=1
+fi
+
+if [ "$busy" -eq 1 ]; then
+	logger -t if_pppoe -p daemon.warning "if-pppoe-kmod: pppoe clone(s)/registration(s) still present, leaving if_pppoe loaded (reboot to fully remove / return to mpd5)"
+	exit 0
+fi
+
+if kldunload if_pppoe 2>/dev/null; then
+	# so a later reinstall's kmodUpgradePending() doesn't report an upgrade
+	# pending against a load record for a module that isn't resident any more
+	rm -f /var/run/if_pppoe/loaded.json
+	logger -t if_pppoe -p daemon.notice "if-pppoe-kmod: if_pppoe unloaded on removal"
+else
+	logger -t if_pppoe -p daemon.warning "if-pppoe-kmod: if_pppoe still busy, left loaded"
+fi

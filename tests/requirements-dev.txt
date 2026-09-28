@@ -1,0 +1,5 @@
+# Host-runnable suites (tests/perf, tests/functional seam tests); CI installs
+# this plus tests/plugin/requirements.txt (.github/workflows/ci.yml, python job).
+# Renovate groups these into one "python test deps" PR (renovate.json).
+pytest==9.1.1
+scapy==2.7.0

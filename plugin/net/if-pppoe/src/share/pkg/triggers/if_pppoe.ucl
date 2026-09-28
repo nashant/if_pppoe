@@ -1,0 +1,12 @@
+# pkg matches `path` against the DIRECTORY of each touched file (libpkg/triggers.c
+# append_touched_file() strips the basename, trigger_check_match() compares with STREQ),
+# so this must be the directory; reapply.sh is idempotent for other files there.
+description: "os-if-pppoe: re-apply the interfaces.inc hook after core replaced the file"
+path: [ "/usr/local/etc/inc" ]
+trigger: {
+	type: lua
+	sandbox: false
+	script: <<EOS
+pkg.exec({"/bin/sh", "/usr/local/opnsense/scripts/if_pppoe/reapply.sh", "trigger"})
+EOS
+}

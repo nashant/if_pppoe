@@ -1,0 +1,5 @@
+17353/13127/30480 mbufs in use (current/cache/total)
+12990/8526/21516/1005094 mbuf clusters in use (current/cache/total/max)
+28/1750 mbuf+clusters out of packet secondary zone in use (current/cache)
+0/1524/1524/502547 4k (page size) jumbo clusters in use (current/cache/total/max)
+0/0/0/148902 9k jumbo clusters in use (current/cache/total/max)

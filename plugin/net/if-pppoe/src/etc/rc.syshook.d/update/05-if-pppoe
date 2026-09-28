@@ -1,0 +1,4 @@
+#!/bin/sh
+# os-if-pppoe: runs from core's +POST_INSTALL (rc.syshook update), right
+# after pkg replaced interfaces.inc; re-apply the hook without delay.
+exec /bin/sh "${IF_PPPOE_SCRIPTS:-/usr/local/opnsense/scripts/if_pppoe}/reapply.sh" update

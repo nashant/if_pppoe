@@ -1,0 +1,402 @@
+[
+  {
+    "key": "ifbringup",
+    "findings": [
+      {
+        "claim": "mpd5 for a PPPoE WAN is configured and launched entirely inside interfaces.inc's interface_ppps_configure($interface): it builds /var/etc/mpd_{$interface}.conf, kills any prior mpd5 by pidfile /var/run/{$ppp['type']}_{$interface}.pid, then runs mwexecf('/usr/local/sbin/mpd5 -b -d /var/etc -f mpd_{$interface}.conf -p /var/run/{$ppp['type']}_{$interface}.pid -s ppp {$ppp['type']}client'), followed by ppp-rename.sh to rename the netgraph node and a 20s wait loop for does_interface_exist().",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/etc/inc/interfaces.inc#L1030-L1368 (mpd5 exec at L1337-1340, pidfile kill at L1313, config write at L1319, rename at L1343, wait loop L1346-1358)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "interface_ppps_configure() is gated by interface_ppps_capable(), which returns true only if $config['ppps']['ppp'] contains an entry whose 'if' equals $config['interfaces'][$interface]['if']. This lookup is a hardcoded PHP loop with no plugin/hook dispatch of any kind — plugins_devices()/plugins_interfaces() are never consulted here.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/etc/inc/interfaces.inc#L975-L989",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The config.xml linkage between an assigned interface and a PPP entry is purely by matching the 'if' string (e.g. 'pppoe0'); 'ptpid' is only a monotonically increasing integer used once at ppp-entry creation time to derive that 'if' name (type + ptpid) and to detect the next free id — it plays no role in interfaces.inc's runtime matching.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/www/interfaces_ppps_edit.php#L34-L57,L215-L217 and https://github.com/opnsense/core/blob/25.7.11/src/opnsense/mvc/app/models/OPNsense/Core/InitialSetup.php#L251-L264",
+        "confidence": "verified"
+      },
+      {
+        "claim": "interface_ppps_configure() is called from exactly one place in core: unconditionally near the end of interface_configure(), with no plugin dispatch point between hardware setup and this call inside the same function.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/etc/inc/interfaces.inc#L2465 (call site inside interface_configure(), defined L2308-onward)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Teardown/stop of a PPP link goes through interface_ppps_reset(), called from interface_reset()/interface_suspend(); it kills mpd5 by pidfile /var/run/{$ppp['type']}_{$interface}.pid, or (if 'ondemand' + suspend) triggers a configd 'interface reconfigure' instead of killing.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/etc/inc/interfaces.inc#L1012-L1028 and L805-L911 (interface_reset calling interface_ppps_reset at L906)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "grep across the shipped OPNsense core tree shows mpd5/mpd_ referenced in exactly two files: interfaces.inc and the ppp-rename.sh helper — i.e. there is no separate mpd5 service/rc.d unit; mpd5 is a bare-forked, PID-file-tracked process, not a managed OPNsense service.",
+        "evidence": "grep -rln 'mpd5|mpd_' src/ against https://github.com/opnsense/core tag 25.7.11 (files: src/etc/inc/interfaces.inc, src/opnsense/scripts/interfaces/ppp-rename.sh)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Boot ordering makes any plugin rc.d-script-based takeover of mpd5 inherently racy: /etc/rc runs /usr/local/etc/rc.bootup (which calls interfaces_configure(true), which reaches interface_ppps_configure() and launches mpd5) BEFORE it runs '/usr/local/etc/rc.syshook start', which is what invokes rc.syshook.d/start/20-freebsd -> /usr/local/etc/rc.freebsd start -> the /usr/local/etc/rc.d/* plugin scripts. So by the time any plugin rc.d script executes at cold boot, mpd5 has already been forked and has been trying to negotiate PPPoE for up to ~20 seconds.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/etc/rc#L229-L243 (php+rc.bootup at L229-240, rc.syshook start at L243) and https://github.com/opnsense/core/blob/25.7.11/src/etc/rc.bootup#L88-L90 (interfaces_hardware/interfaces_configure) and https://github.com/opnsense/core/blob/25.7.11/src/etc/rc.syshook.d/start/20-freebsd",
+        "confidence": "verified"
+      },
+      {
+        "claim": "There is no plugins.inc.d hook (_devices, _interfaces, _services, _configure, _firewall, _syslog, _xmlrpc_sync) that lets a plugin intervene in whether/how a specific WAN's PPP link is dialed; plugins_devices()/plugins_interfaces() feed device metadata (spoofmac, pattern, dynamic-interface registration) into interface_configure(), but never gate interface_ppps_capable()/interface_ppps_configure(). The closest event, '_configure()' with key 'newwanip', only fires from the tail end of rc.newwanip, i.e. strictly after address configuration already happened.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/etc/inc/plugins.inc#L94-L260 (plugins_devices/plugins_interfaces/plugins_configure definitions) cross-checked against https://docs.opnsense.org/development/backend/legacy.html (hook list: _services, _configure with events early/bootup/newwanip/vpn/etc, _firewall, _interfaces, _devices, _syslog, _xmlrpc_sync — no PPP/dial hook documented) and https://github.com/opnsense/core/blob/25.7.11/src/etc/rc.newwanip#L142-L143 (plugins_configure('newwanip', ...) is the last statement in the script)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "GitHub code search across opnsense/plugins and opnsense/core turns up zero references to 'mpd5', 'interface_ppps_configure', or any *.patch file touching interfaces.inc — there is no existing plugin (past or present) that patches core's mpd5/PPP bring-up logic to substitute an alternative dialer. Only unrelated 'legacy' plugins (openvpn-legacy, strongswan-legacy, firewall-legacy) exist for other subsystems that were deliberately made pluggable by core; PPPoE/mpd5 was never made pluggable that way.",
+        "evidence": "gh api search/code -f q='mpd5 repo:opnsense/plugins' -> total_count:0; -f q='interface_ppps_configure repo:opnsense/plugins' -> total_count:0; -f q='filename:*.patch interfaces.inc org:opnsense' -> total_count:0 (queries run against the live GitHub Code Search API on 2026-09-26)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "/usr/local/etc/inc/interfaces.inc is listed in core's own pkg plist, i.e. it is a file owned by the base 'core' package, not something a plugin can add/replace via its own pkg-plist without a file-ownership conflict; any plugin wanting different behavior in interface_ppps_configure()/interface_ppps_capable() has to modify that on-disk file at runtime (a self-applied patch) rather than ship a competing copy through pkg.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/plist#L17 (\"/usr/local/etc/inc/interfaces.inc\")",
+        "confidence": "verified"
+      },
+      {
+        "claim": "interfaces.inc is a very high-churn file in opnsense/core: 198 commits touched it between 2024-01-01 and 2026-09-26 (roughly 9-10 commits/month), so a plugin-applied runtime patch to interface_ppps_configure()/interface_ppps_capable() would need to be re-validated against essentially every point release (25.7.1 through 25.7.11 alone spans ~11 tags in one release train).",
+        "evidence": "git log --oneline --since=2024-01-01 -- src/etc/inc/interfaces.inc | wc -l  (run against a full clone of https://github.com/opnsense/core, HEAD as of 2026-09-26) = 198; tag list from git ls-remote --tags https://github.com/opnsense/core.git showing 25.7, 25.7.1..25.7.11",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Every place that re-triggers PPP bring-up/teardown funnels back through the same two functions: GUI 'Apply' on Interfaces -> Overview Api\\OverviewController::reconfigure -> configd action 'interface reconfigure' -> /usr/local/etc/rc.configure_interface %s -> interface_configure(true, $if, true); devd link up/down -> configd actions 'linkup.start'/'linkup.stop' -> /usr/local/etc/rc.linkup -> interface_configure()/interface_suspend(); CARP master/backup transition -> rc.syshook.d/carp/20-ppp directly calls interface_ppps_configure($ifkey) or interface_suspend($ifkey) for ppp interfaces bound to the CARP-tracked port.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/opnsense/mvc/app/controllers/OPNsense/Interfaces/Api/OverviewController.php#L306; https://github.com/opnsense/core/blob/25.7.11/src/opnsense/service/conf/actions.d/actions_interface.conf#L1-L36 ([reconfigure], [linkup.start], [linkup.stop] stanzas); https://github.com/opnsense/core/blob/25.7.11/src/etc/rc.configure_interface#L39-L41; https://github.com/opnsense/core/blob/25.7.11/src/etc/rc.linkup#L43-L74; https://github.com/opnsense/core/blob/25.7.11/src/etc/rc.syshook.d/carp/20-ppp#L47-L62",
+        "confidence": "verified"
+      },
+      {
+        "claim": "mpd5's up/down scripts (set via 'set iface up-script /usr/local/opnsense/scripts/interfaces/ppp-linkup.sh' / down-script in the generated mpd config) are the actual place WAN-up/WAN-down state is recorded: on link-up they run 'ifctl -i IF -4nd/-4rd ...' to write nameserver/router info, then 'configctl -d interface newip IF force' (or trigger newipv6 via ppp-ipv6.php); on link-down they run 'ngctl shutdown IF:', 'ifctl -i IF -4nd/-4rd' (no args = clear), and 'configctl -d interface newip IF' (no force) to signal removal, plus logging uptime to /conf/IF.log.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/etc/inc/interfaces.inc#L1177-L1178 (up-script/down-script directives) and https://github.com/opnsense/core/blob/25.7.11/src/opnsense/scripts/interfaces/ppp-linkup.sh and https://github.com/opnsense/core/blob/25.7.11/src/opnsense/scripts/interfaces/ppp-linkdown.sh (full contents read)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "'configctl -d interface newip <realif> [force]' invokes the configd action [newip] = /usr/local/etc/rc.newwanip %s %s, which reads the CURRENT KERNEL address off the interface via interfaces_primary_address($interface) (not from any file mpd5 writes) and the gateway via OPNsense\\Interface\\Autoconf::getRouter($device,'inet'); it then reconfigures VIPs/6rd/6to4/linked gre-gif devices, reconfigures routing, calls filter_configure_sync(), kills pf states tied to the old IP/gateway, and finally dispatches plugins_configure('vpn', ...) and plugins_configure('newwanip', ...) (this last one is what feeds e.g. dyndns).",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/opnsense/service/conf/actions.d/actions_interface.conf#L14-L18 ([newip] stanza) and https://github.com/opnsense/core/blob/25.7.11/src/etc/rc.newwanip (full script read: L49-L143, esp. L65 interfaces_primary_address, L71 Autoconf::getRouter, L142-143 plugins_configure calls)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The router/nameserver/prefix/searchdomain data that OPNsense's core reads for a PPP-type interface is entirely file-based and protocol-agnostic to mpd5: OPNsense\\Interface\\Autoconf::getRouter()/getNameserver()/getPrefix()/getSearchdomain() just read /tmp/{$if}_{$type}[v6] (falling back to /tmp/{$if}:slaac_{$type}[v6]). A kernel driver's own up/down scripts can populate these same files via the ifctl(8) shell helper (or by writing them directly in the same '\\n'-joined, one-value-per-line format) and there is no other code path that is mpd5-specific.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/opnsense/mvc/app/library/OPNsense/Interface/Autoconf.php#L36-L109 (full class read) and https://github.com/opnsense/core/blob/25.7.11/src/opnsense/scripts/interfaces/ifctl.sh#L34-L306 (full script read, defines FILES=\"nameserver prefix router searchdomain\" and the /tmp/<if>_<type> naming convention, including -c/-d/-u/-l/-O modes)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Dynamic gateway auto-discovery in the Routing\\Gateways model is generic across ALL interface/ipaddr types, not special-cased for pppoe: for every configured interface it tries Autoconf::getRouter($device,$ipproto) first, and if that file exists it becomes the gateway entry (with monitoring/dpinger target set to the same address) regardless of whether mpd5 or anything else wrote that file. This means dpinger/gateway-group/policy-routing integration requires zero core changes as long as a replacement driver writes the same /tmp/<if>_router file and fires the same newip/newipv6 configd action.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7.11/src/opnsense/mvc/app/models/OPNsense/Routing/Gateways.php#L395-L442 (loop building $thisconf per ifname/ipproto, Autoconf::getRouter check at L435)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Conclusion (synthesis, not a single source): OPNsense core provides NO supported extension point for a plugin to suppress mpd5 for one specific PPPoE interface. The only two structurally sound options are (a) a small, targeted, self-reapplying runtime patch to interfaces.inc's interface_ppps_capable()/interface_ppps_configure() (e.g. short-circuit at the top of interface_ppps_configure() when a marker file/flag says 'driver-managed', re-applied on every boot by an early rc.syshook.d script that runs before rc.bootup requires interfaces.inc, so it self-heals after a core update silently reverts the file), continuing to keep the existing <ppps><ppp> config entry so gateway/dyndns/firewall-group linkage by friendly name still works; or (b) accept mpd5 always launches first and design the kernel driver/daemon to seize the parent Ethernet + PPPoE session from mpd5 immediately at boot before mpd5 completes negotiation — which is what the existing broken prototype attempted and is race-prone per the boot-order finding above. Option (a) is the only one avoiding a race, at the cost of a patch that needs re-validation on ~every point release.",
+        "evidence": "Synthesis of the verified findings above; no single doc/commit states this conclusion — flagging explicitly as inference, not something read verbatim from source.",
+        "confidence": "plausible"
+      }
+    ],
+    "open_questions": [
+      "Whether OPNsense's own CI/build pipeline (opnsense/tools, the 'core' package build) would reject or silently overwrite a plugin's runtime-applied patch to /usr/local/etc/inc/interfaces.inc during a 'pkg upgrade' of the core package — i.e. exact behavior of pkg(8) when a plugin's syshook has modified a file another package owns, was not verified (would need a live OPNsense box or the opnsense/update / pkg source to confirm).",
+      "Whether there is an unlisted or newer (26.x) mechanism specifically for 'alternate PPP backends' that supersedes mpd5-only design — only 25.7.11 was read in full; 26.1/26.7 tags were identified but not diffed line-by-line against 25.7.11 for interfaces.inc/plugins.inc (worth a follow-up diff before committing to an implementation plan, given the observed high churn).",
+      "How OPNsense's Services widget (System status / dashboard) currently represents the mpd5 process as a monitorable 'service' (if at all) versus how our kmod-backed alternative would need to register a '_services()' hook so administrators still see PPP link status/restart controls in the standard Services page — not investigated in this pass.",
+      "The exact wire format/ioctl surface of the referenced if_pppoe.ko / pppoectl(8) prototype (parent iface, PAP/CHAP creds, keepalive, IPCP) was out of scope for this pass (task was OPNsense-core-only); a follow-up should confirm the kmod actually calls the FreeBSD-equivalent of 'ifconfig <if> inet <addr>/32' on session-up and clears it on session-down, since that is the one behavior this whole integration silently assumes.",
+      "Whether IPv6 (pppoev6/DHCPv6-PD over PPPoE) is in scope for the replacement — rc.newwanipv6 and the '_prefix'/'_searchdomain' Autoconf fields were identified by grep but rc.newwanipv6's body was not read line-by-line in this pass."
+    ]
+  },
+  {
+    "key": "pluginapi",
+    "findings": [
+      {
+        "claim": "Core dispatches plugin hooks from a single file, src/etc/inc/plugins.inc, which globs /usr/local/etc/inc/plugins.inc.d/*.inc (plugins_scan(), refusing any plugin name that collides with a base-system .inc/.class file) and include_once's each hit before calling the derived function name.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L33-L67",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_services()` takes no arguments and must return a list of service-descriptor arrays (keys seen in the wild: name, description, php[start|restart], configd[start|restart|stop], pidfile, nocheck); plugins_services() calls it, flattens all plugins' results, then sorts by 'name'.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L69-L92",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_devices()` takes no arguments and returns a list of device-descriptor arrays; plugins_devices() merges each with defaults configurable=true, pattern='^impossiblecontrolmatch$', spoofmac=true, volatile=false when the plugin omits those keys.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L94-L124",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Real usage of _devices(): net/zerotier's zerotier_devices() returns [['pattern' => '^zt', 'spoofmac' => false, 'volatile' => true]] so the Interfaces-assignment page recognizes zt* as a legitimate, non-spoofable, non-persistent device type.",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/net/zerotier/src/etc/inc/plugins.inc.d/zerotier.inc#L63-L66",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_cron()` takes no arguments, returns a list of cron-job descriptors, collected by plugins_cron().",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L126-L145",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_syslog()` takes no arguments and returns an associative array keyed by facility name, each value like ['facility' => ['dnsmasq']]; plugins_syslog() merges these by key across all plugins for syslog-ng custom destination registration.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L151-L170 and https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc.d/dnsmasq.inc#L73-L80",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_interfaces()` takes no arguments and returns an associative array intf_ref => intf_data (interface properties). plugins_interfaces() writes each into $config['interfaces'][intf_ref], marks it internal_dynamic=true, diffs/updates changed properties, and deletes any previously-registered dynamic interface no longer returned (stale cleanup).",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L177-L243",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_firewall(\\OPNsense\\Firewall\\Plugin $fw)` takes the live firewall-plugin object by argument and must mutate it via $fw->registerFilterRule(...); its return value is ignored. Real example: dnsmasq_firewall() registers DHCP allow rules per matching interface.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L245-L260 and https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc.d/dnsmasq.inc#L96-L140",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_configure()` takes no arguments and returns ['<hook>' => ['funcname', 'funcname2:argc', ...]]. plugins_configure($hook, $verbose=false, $args=[]) matches by $hook key (optionally `hookname:glob` to restrict which plugin files are scanned), then calls each listed function via call_user_func_array with a leading $verbose plus up to ':argc' extra positional args (default argc=1, i.e. only $verbose is passed unless the plugin opts into more).",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L262-L332",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Real _configure() shape: dnsmasq_configure() returns ['dns' => ['dnsmasq_configure_do'], 'local' => ['dnsmasq_configure_do']] -- i.e. hook keys are call-site-defined strings (interfaces.inc/services.inc pick the string when they invoke plugins_configure()), not a fixed enum.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc.d/dnsmasq.inc#L40-L46",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Official docs corroborate additional standard hook keys used at real call sites: 'early' (before normal services start), 'bootup' (normal legacy service configuration), 'newwanip' (after a dynamic interface obtains an address), and 'vpn' (VPN subsystem reload points) -- these are the strings a plugin's _configure() array can key on.",
+        "evidence": "https://docs.opnsense.org/development/backend/legacy.html",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_run()` takes no arguments, returns ['<hook>' => callable]; plugins_run($hook, $args) invokes the matched callable via call_user_func_array($task, $args) and collects non-empty return values keyed by plugin name.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L334-L367",
+        "confidence": "verified"
+      },
+      {
+        "claim": "`<name>_xmlrpc_sync()` takes no arguments and returns a list of ['description', 'section', 'id', 'services' (optional), 'help' (optional)]; plugins_xmlrpc_sync() indexes them by 'id', auto-fills 'help' text from 'description' when omitted, and normalizes 'services' to an array.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc#L369-L397 and https://github.com/opnsense/core/blob/25.7/src/etc/inc/plugins.inc.d/dnsmasq.inc#L82-L94",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Minimal MVC plugin skeleton (canonical reference plugin devel/helloworld): models/OPNsense/<Name>/<Name>.xml declares <mount>//OPNsense/<name></mount> and typed <items> (BooleanField/NetworkField/EmailField/TextField/...); models/OPNsense/<Name>/<Name>.php is a near-empty `class <Name> extends \\OPNsense\\Base\\BaseModel {}`; models/.../ACL/ACL.xml gates ui/api URL patterns; models/.../Menu/Menu.xml adds the sidebar entry.",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/devel/helloworld/src/opnsense/mvc/app/models/OPNsense/HelloWorld/HelloWorld.xml , https://github.com/opnsense/plugins/blob/25.7/devel/helloworld/src/opnsense/mvc/app/models/OPNsense/HelloWorld/HelloWorld.php , https://github.com/opnsense/plugins/blob/25.7/devel/helloworld/src/opnsense/mvc/app/models/OPNsense/HelloWorld/ACL/ACL.xml , https://github.com/opnsense/plugins/blob/25.7/devel/helloworld/src/opnsense/mvc/app/models/OPNsense/HelloWorld/Menu/Menu.xml",
+        "confidence": "verified"
+      },
+      {
+        "claim": "controllers/OPNsense/<Name>/Api/SettingsController.php is `class SettingsController extends \\OPNsense\\Base\\ApiMutableModelControllerBase` declaring only two static properties, $internalModelClass (model FQCN) and $internalModelName (model tag), which is enough to get generic get/set CRUD over the model with no method bodies.",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/devel/helloworld/src/opnsense/mvc/app/controllers/OPNsense/HelloWorld/Api/SettingsController.php#L39-L43",
+        "confidence": "verified"
+      },
+      {
+        "claim": "controllers/OPNsense/<Name>/Api/ServiceController.php for a service-with-toggle plugin extends OPNsense\\Base\\ApiMutableServiceControllerBase and declares 4 static properties: $internalServiceClass (model FQCN), $internalServiceTemplate (configd template dir name), $internalServiceEnabled (model reference string, e.g. 'general.enabled'), $internalServiceName (the name configd/rc.d know the service by). Real minimal example: net/ndproxy's ServiceController is exactly these 4 lines, no method bodies.",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/net/ndproxy/src/opnsense/mvc/app/controllers/OPNsense/Ndproxy/Api/ServiceController.php#L35-L41",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The base class ApiMutableServiceControllerBase (core) supplies startAction/stopAction/restartAction/statusAction/reconfigureAction so the plugin normally writes zero controller logic for these: start/stop/restart POST-guard then `configdRun(\"'<serviceName>' <verb>\")`; statusAction parses the configd 'status' text response for 'not running'/'is running' into running|stopped|disabled|unknown plus widget captions; reconfigureAction (a) optionally stops first if reconfigureForceRestart() (default returns 1, i.e. always) or the service is disabled, (b) optionally runs configd 'interface invoke registration' if invokeInterfaceRegistration() is overridden to return true, (c) optionally runs configd 'filter reload skip_alias' if invokeFirewallReload() returns true, (d) runs configd `template reload <internalServiceTemplate>` and throws a UserException on non-'OK' result, then (e) starts (if not already running) or 'reload's the service if enabled.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/opnsense/mvc/app/controllers/OPNsense/Base/ApiMutableServiceControllerBase.php#L96-L261",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The reconfigureAction's optional invokeInterfaceRegistration() hook (default false) is the closest built-in mechanism for a service toggle to also nudge OPNsense's interface subsystem (it triggers configd action 'interface invoke registration' when overridden true) -- but this session did not trace what that configd action actually executes, so whether it is sufficient to make an already-up WAN interface switch backends is unverified.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/opnsense/mvc/app/controllers/OPNsense/Base/ApiMutableServiceControllerBase.php#L152-L158",
+        "confidence": "plausible"
+      },
+      {
+        "claim": "configd action file format (service/conf/actions.d/actions_<name>.conf): one [verb] section per action with `command:` (a shell command, `service <name> <verb>` for OS-package-provided daemons, or a script path), `parameters:`, `type:script|script_output`, `message:`, optional `description:`. Real full example is net/ndproxy's actions_ndproxy.conf (start/stop/restart run `service ndproxy <verb>`; status shells to `/usr/local/sbin/pluginctl -s ndproxy status` as script_output).",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/net/ndproxy/src/opnsense/service/conf/actions.d/actions_ndproxy.conf",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Template delivery: service/templates/OPNsense/<Name>/+TARGETS maps each template file to its destination path on disk (e.g. `helloworld.conf:/usr/local/etc/helloworld/helloworld.conf`); the actual template files use `{% if/for %}` Twig-like syntax reading the model via `OPNsense.<lowercasename>.<field path>` or `helpers.getNodeByTag('OPNsense.<name>.<section>')`, and are (re)written by the configd `template reload <internalServiceTemplate>` action that reconfigureAction() calls.",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/devel/helloworld/src/opnsense/service/templates/OPNsense/HelloWorld/%2BTARGETS , https://github.com/opnsense/plugins/blob/25.7/devel/helloworld/src/opnsense/service/templates/OPNsense/HelloWorld/helloworld.conf , https://github.com/opnsense/plugins/blob/25.7/net/ndproxy/src/opnsense/service/templates/OPNsense/Ndproxy/rc.conf.d/ndproxy",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The rc.conf.d template pattern for a plugin that toggles a FreeBSD rc.d-controlled daemon writes `<name>_enable=\"YES\"/\"NO\"` (plus derived parameters) into /etc/rc.conf.d/<name>, exactly like net/ndproxy's rc.conf.d/ndproxy template -- this is the pattern to reuse for gating a kernel-module-backed rc.d script.",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/net/ndproxy/src/opnsense/service/templates/OPNsense/Ndproxy/rc.conf.d/ndproxy",
+        "confidence": "verified"
+      },
+      {
+        "claim": "net/ndproxy is the closest real analogue to a service-plus-driver plugin: its Makefile declares PLUGIN_DEPENDS=ndproxy, pulling in a separate FreeBSD package that ships the actual daemon binary and (presumably) its own /usr/local/etc/rc.d script; the opnsense/plugins tree for net/ndproxy itself contains ONLY the plugins.inc.d hook, the MVC (model/controllers/forms/menu/ACL), the configd actions, and the rc.conf.d template -- no rc.d script or binary of its own.",
+        "evidence": "https://github.com/opnsense/plugins/blob/25.7/net/ndproxy/Makefile and https://github.com/opnsense/plugins/tree/25.7/net/ndproxy/src (tree listing has no src/etc/rc.d)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Recommended 2-3 closest analogues for os-if-pppoe by file path: (1) devel/helloworld -- canonical minimal MVC+ServiceController+configd+template skeleton to copy structurally; (2) net/ndproxy -- closest real analogue for 'plugin wraps an externally-packaged daemon/kernel-adjacent component behind a single BooleanField enable toggle, driven through rc.conf.d + service(8)'; (3) net/zerotier -- closest analogue for registering a plugin-created network interface type into OPNsense's interface-assignment machinery via `_devices()`/`_interfaces()`.",
+        "evidence": "https://github.com/opnsense/plugins/tree/25.7/devel/helloworld , https://github.com/opnsense/plugins/tree/25.7/net/ndproxy , https://github.com/opnsense/plugins/tree/25.7/net/zerotier",
+        "confidence": "verified"
+      },
+      {
+        "claim": "CRITICAL GAP: core's own PPPoE/PPTP/L2TP WAN bring-up is monolithic and hardcoded to mpd5, with no plugin hook to intercept or replace it. interface_configure() (src/etc/inc/interfaces.inc) unconditionally calls interface_ppps_configure($interface) at line 2361; that function (defined at line 938) detects ppp/pppoe/pptp/l2tp type from $config['ppps']['ppp'] (switch at line 955), builds an mpd5 config buffer (comment 'Construct the mpd.conf file' at line 1047; pppoe-specific directives 'set pppoe service'/'set pppoe iface' at lines 1206-1207), writes /var/etc/mpd.script (line 1224) and starts mpd5 (comment 'fire up mpd' at line 1244). None of plugins_services/_configure/_interfaces/_devices/_firewall/_run/_xmlrpc_sync is consulted anywhere in this path, and there is no 'plugins_ppps' or equivalent extension point.",
+        "evidence": "https://github.com/opnsense/core/blob/25.7/src/etc/inc/interfaces.inc#L2206 (caller) , https://github.com/opnsense/core/blob/25.7/src/etc/inc/interfaces.inc#L2361 (call site) , https://github.com/opnsense/core/blob/25.7/src/etc/inc/interfaces.inc#L938-L1269 (mpd5 body, key lines 955,1047,1206-1207,1224,1244)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Consequence of the above gap: an os-if-pppoe plugin cannot make core's own WAN bring-up switch to the kernel driver purely through documented plugins.inc.d hooks. It must either (a) intercept mpd5 externally at bring-up time and drive the kernel client instead -- the same strategy the existing broken prototype (if-pppoe-ctl stopping mpd5 from outside) already attempts -- or (b) ship a modified copy of src/etc/inc/interfaces.inc (or a wrapper it loads earlier) as a plugin-owned file overlay. This session did not verify whether OPNsense's plugin packaging (pkg) permits or supports a plugin package overlaying a file owned by the base 'opnsense' package; that is an open question, not a confirmed mechanism.",
+        "evidence": "Derived from the two findings above (https://github.com/opnsense/core/blob/25.7/src/etc/inc/interfaces.inc#L2361 and #L938-L1269); the overlay-permission claim itself is NOT verified from source this session.",
+        "confidence": "plausible"
+      },
+      {
+        "claim": "Boot-time integration points exist upstream of service configuration that are well-suited to loading a kernel module before anything tries to use it: official docs describe 'plugins/device' as the phase where plugins 'register and create devices' (e.g. OpenVPN ensuring tun/tap devices exist) before further configuration, and 'syshook/early' as simple shell scripts run before any network services load, explicitly usable 'to load specific drivers' (i.e. kldload).",
+        "evidence": "https://docs.opnsense.org/development/backend/legacy.html",
+        "confidence": "verified"
+      }
+    ],
+    "open_questions": [
+      "Whether OPNsense's pkg-based plugin packaging permits (or how it handles) a plugin package shipping a file at a path already owned by the base 'opnsense' package (e.g. an overridden src/etc/inc/interfaces.inc) -- this determines whether option (b) in the mpd5-override gap finding is even viable, versus being restricted to external interception (stopping/replacing mpd5's process from a plugin-owned configd action/rc.d hook, as the existing broken prototype already attempts).",
+      "What the configd action 'interface invoke registration' (triggered by ApiMutableServiceControllerBase::invokeInterfaceRegistration()=>true) actually executes server-side -- whether it merely refreshes plugins_interfaces()/plugins_devices() dynamic registrations, or also re-triggers interface_configure()/interface_ppps_configure() for affected interfaces. Not traced this session; needed to know if flipping the plugin's enable toggle can, by itself, cause OPNsense to re-run WAN bring-up against the new backend, or whether the plugin must also call 'interface reconfigure' / a custom configd action explicitly.",
+      "Whether if_pppoe.ko's clone interfaces (pppoeN) should be made to reuse the exact interface name mpd5 would have assigned to the same $ppp['if'] config entry (so all of OPNsense's existing per-interface config -- gateways, DNS, monitoring, firewall rules keyed to that $if -- keeps working unmodified), versus registering pppoeN as a new device pattern via a devices()/interfaces() hook (net/zerotier's '^zt' pattern is the template) and having the plugin reconcile it against the existing 'ppps' config section. This is a design decision for the plugin, not something core source dictates one way.",
+      "Whether there is a 'plugins_ppps' or similar hook added in a version newer than 25.7 (this research covered 25.7's plugins.inc/interfaces.inc only) -- worth re-checking against the 'master'/26.1 branch before finalizing the plugin design, since the task explicitly names 26.1 as a target.",
+      "The exact shape/behavior of ApiMutableModelControllerBase (SettingsController's parent) was not fetched this session -- assumed by convention (generic get/set/searchBase over the model given $internalModelClass/$internalModelName) based on how devel/helloworld and net/ndproxy use it with zero method overrides, but the base class body itself is unverified."
+    ]
+  },
+  {
+    "key": "packaging",
+    "findings": [
+      {
+        "claim": "A plugin is built via Mk/plugins.mk in opnsense/plugins. A Makefile sets PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_COMMENT (build-required: the check: target errors via .error if any of PLUGIN_NAME/PLUGIN_VERSION/PLUGIN_COMMENT is empty) plus optional PLUGIN_REVISION (default 0), PLUGIN_MAINTAINER (default 'N/A'), PLUGIN_WWW (default 'https://opnsense.org/'), PLUGIN_DEPENDS, PLUGIN_LICENSE (default BSD2CLAUSE), PLUGIN_TIER (default 3), then includes '../../Mk/plugins.mk'.",
+        "evidence": "https://github.com/opnsense/plugins/blob/26.7/Mk/plugins.mk#L41-L64",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Package name = PLUGIN_PREFIX (default 'os-') + PLUGIN_NAME (+ '-devel' suffix for a devel build via PLUGIN_PKGSUFFIX). Version string = PLUGIN_VERSION, or 'PLUGIN_VERSION_PLUGIN_REVISION' when PLUGIN_REVISION is set and nonzero.",
+        "evidence": "https://github.com/opnsense/plugins/blob/26.7/Mk/plugins.mk#L74 (PLUGIN_PREFIX?=os-), #L105-L123 (PLUGIN_PKGNAME/PLUGIN_PKGVERSION composition)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "A real, in-tree example of exactly the requested pattern (plugin package that only ships glue/config and depends on a separately built kernel-module package) is net/realtek-re: its Makefile is just PLUGIN_NAME=realtek-re, PLUGIN_DEPENDS=realtek-re-kmod, and its src ships only src/etc/rc.loader.d/50-realtek-re (a kld-load config snippet: if_re_load=\"YES\"; if_re_name=\"/boot/modules/if_re.ko\"). This is the template an os-if-pppoe (depending on an if-pppoe-kmod pkg) should follow.",
+        "evidence": "https://github.com/opnsense/plugins/blob/26.7/net/realtek-re/Makefile and https://github.com/opnsense/plugins/blob/26.7/net/realtek-re/src/etc/rc.loader.d/50-realtek-re",
+        "confidence": "verified"
+      },
+      {
+        "claim": "'make package' (target 'package:' in Mk/plugins.mk) stages the plugin under ${WRKDIR}/src (WRKDIR defaults to ${.CURDIR}/work), runs 'make install' then 'make metadata' (which itself runs 'make scripts' to build +PRE_INSTALL/+POST_INSTALL/+PRE_DEINSTALL/+POST_DEINSTALL, 'make manifest' to write +MANIFEST, 'make description' to write +DESC, and 'make plist' to write plist), then calls 'pkg create -v -m ${WRKSRC} -r ${WRKSRC} -p ${WRKSRC}/plist -o ${PKGDIR}'. PKGDIR defaults to ${WRKDIR}/pkg, i.e. the resulting os-<name>-<version>.pkg lands in work/pkg/ under the plugin's own directory. Before staging, for each name in PLUGIN_DEPENDS it runs 'pkg install -yA <dep>' if not already installed (installs it as an automatic/orphanable dependency on the build machine).",
+        "evidence": "https://github.com/opnsense/plugins/blob/26.7/Mk/plugins.mk#L241-L330 (install/metadata/package targets) and https://github.com/opnsense/plugins/blob/26.7/Mk/defaults.mk#L99-L102 (WRKDIR/PKGDIR/WRKSRC defaults)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The +MANIFEST written by the 'manifest:' target embeds a 'deps' block for every PLUGIN_DEPENDS entry, but only after confirming (at build time, via 'pkg query') that the dependency is actually installed on the builder — if not, the build aborts with 'Missing dependency: <name>'. This means a kmod package must exist (be installed on the build host, e.g. from the same or another enabled pkg repo) before 'make package' will succeed for a plugin that PLUGIN_DEPENDS on it.",
+        "evidence": "https://github.com/opnsense/plugins/blob/26.7/Mk/plugins.mk#L140-L150",
+        "confidence": "verified"
+      },
+      {
+        "claim": "+PRE_INSTALL/+POST_INSTALL/+PRE_DEINSTALL/+POST_DEINSTALL are assembled from up to three sources per script, controlled by 'make scripts': (1) a hand-authored '<SCRIPT>.pre' file content is emitted first ('scripts-pre'), (2) framework-'auto'-generated snippets are appended ('scripts-auto') — e.g. if src/etc/rc.syshook.d/*.early|*.start exist they get registered into +POST_INSTALL; if src/opnsense/service/conf/actions.d exists, Templates/actions.d (which restarts configd) is appended to +POST_INSTALL; if src/etc/rc.loader.d exists, Templates/rc.loader.d (which calls /usr/local/etc/rc.configure_firmware) is appended to both +POST_INSTALL and +POST_DEINSTALL; if src/opnsense/mvc/app/models exists, Templates/models + Templates/configure (which calls /usr/local/etc/rc.configure_plugins <install|remove>) are appended; if src/opnsense/service/templates exists, Templates/templates is appended; if src/opnsense/scripts/firmware/repos exists, each file there is registered into +POST_INSTALL — then (3) a '<SCRIPT>.post' file is appended ('scripts-post'). If instead a bare file named exactly '+PRE_INSTALL' etc. exists in the plugin dir, that fully overrides steps 1/2/3 for that script ('scripts-manual'). All of these go through sed with %%PLUGIN_NAME%%/%%PLUGIN_ABI%%/%%PLUGIN_ARCH%%/%%PLUGIN_MAINTAINER%%/%%PLUGIN_WWW%%/etc. substitution (same substitution applied to any '.in'-suffixed file under src/ during 'make install').",
+        "evidence": "https://github.com/opnsense/plugins/blob/26.7/Mk/plugins.mk#L167-L239 (scripts/scripts-pre/scripts-auto/scripts-post/scripts-manual) and #L244-L262 (install: .in/.shadow handling) and https://github.com/opnsense/plugins/blob/26.7/Mk/defaults.mk#L81-L97 (REPLACEMENTS/SED_REPLACE)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "System -> Firmware -> Plugins filters purely by package-NAME prefix 'os-' (explode('-', name)[0] == 'os'), applied identically whether the package is 'local' (installed) or 'remote' (available via 'pkg rquery' across ALL enabled repos) — there is no check that the package came from the official OPNsense repo. A third-party repo's os-*.pkg therefore appears under Firmware -> Plugins exactly like an official one, which matches the documented real-world mimugmail community repo (its packages are all named os-*, e.g. os-adguardhome, and show up in Plugins after only adding a repo .conf file).",
+        "evidence": "https://github.com/opnsense/core/blob/26.7/src/opnsense/mvc/app/controllers/OPNsense/Core/Api/FirmwareController.php#L838-L882 (infoAction, the local/remote loop and the os- name-prefix filter)",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Firmware.infoAction() defaults every listed plugin's UI 'tier' to '4' (lowest/community trust) and only upgrades it to the tier annotation pulled from 'firmware tiers' (pkg rquery annotation product_tier) when plugin['repository'] is literally 'OPNsense' or 'SunnyValley' AND the package is remote-provided. A third-party-repo plugin is therefore always shown as an untrusted/community-tier plugin in the UI, but is still listed and installable — there is no code path that hides or blocks it.",
+        "evidence": "https://github.com/opnsense/core/blob/26.7/src/opnsense/mvc/app/controllers/OPNsense/Core/Api/FirmwareController.php#L915-L926",
+        "confidence": "verified"
+      },
+      {
+        "claim": "'firmware remote'/'firmware local' (the configd actions FirmwareController.infoAction() shells out to) are implemented by src/opnsense/scripts/firmware/query.sh: 'local' does '${PKG} query ...'; 'remote' does '${PKG} update -q && ${PKG} rquery -U ...'. Neither restricts to a specific repo name, so this queries/updates across every repo enabled in /usr/local/etc/pkg/repos/*.conf (and /etc/pkg/*.conf), consistent with normal pkg(8) behavior.",
+        "evidence": "https://github.com/opnsense/core/blob/26.7/src/opnsense/scripts/firmware/query.sh",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Installing/removing a plugin from the Firmware UI is a plain 'pkg install -y <pkgname>' / 'pkg remove -y <pkgname>' (plus a 'pkg autoremove -y' pass afterward and a register.php bookkeeping call) — i.e. pkg's own dependency resolver runs, so PLUGIN_DEPENDS entries (e.g. a kmod package) are pulled in / cleaned up automatically from whichever enabled repo provides them, by repo priority, exactly like any other pkg dependency.",
+        "evidence": "https://github.com/opnsense/core/blob/26.7/src/opnsense/scripts/firmware/install.sh#L46-L48 and https://github.com/opnsense/core/blob/26.7/src/opnsense/scripts/firmware/remove.sh#L34-L36",
+        "confidence": "verified"
+      },
+      {
+        "claim": "OPNsense's own repo .conf files (shipped as *.conf.shadow.in, i.e. installed as .conf.sample and only materialized as the active .conf by opnsense-update) show the exact repos.conf(5) shape a third-party repo must also use: a UCL block named after the repo containing fingerprints (path to a fingerprints dir), url (using the pkg builtin ${ABI} token plus a fixed literal path segment), signature_type: \"fingerprints\", priority, and enabled.",
+        "evidence": "https://github.com/opnsense/core/blob/26.7/src/etc/pkg/repos/OPNsense.conf.shadow.in and https://github.com/opnsense/core/blob/26.7/src/etc/pkg/repos/OPNsense-aux.conf.shadow.in",
+        "confidence": "verified"
+      },
+      {
+        "claim": "OPNsense's own repo URL is built from CORE_PACKAGESITE (hardcoded to https://pkg.opnsense.org in Mk/version.mk) and CORE_ABI (the release series, e.g. 26.7), yielding the concrete URL pattern https://pkg.opnsense.org/${ABI}/<SERIES>/latest where ${ABI} is expanded by pkg itself at runtime (e.g. FreeBSD:14:amd64) and <SERIES> is the OPNsense release series (e.g. 26.7) — confirming the ABI/SERIES path-segment layout asked about.",
+        "evidence": "https://github.com/opnsense/core/blob/26.7/Mk/version.mk#L39 (CORE_PACKAGESITE) and https://github.com/opnsense/core/blob/26.7/Mk/defaults.mk#L53-L56,#L118 (CORE_ABI/CORE_STABLE) combined with the url template in OPNsense.conf.shadow.in",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The community 'mimugmail' repo (github.com/mimugmail/opn-repo, and forum-announced at forum.opnsense.org topic 20827) is added by fetching a single .conf file straight into /usr/local/etc/pkg/repos/mimugmail.conf and running 'pkg update' — no plugin package is needed to register the repo. Its live .conf content is: 'mimugmail: { url: \"https://opn-repo.routerperformance.net/repo/${ABI}\", priority: 5, enabled: yes }' — notably it has NO 'fingerprints' and NO 'signature_type' key at all, which per pkg.conf(5) defaults signature_type to NONE (repo integrity relies only on the HTTPS transport, not a pkg-level signature). This is the empirical proof that a 3rd-party os-* repo works exactly like the packaging topic hypothesized, and also shows the low bar for signature_type in practice.",
+        "evidence": "https://www.routerperformance.net/mimugmail.conf (fetched verbatim) and https://github.com/mimugmail/opn-repo",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Official FreeBSD pkg(8) documents the repos.conf(5) fields precisely as used above: URL (schemes http(s)/file/ssh/tcp, or pkg+http(s) with MIRROR_TYPE: SRV), ENABLED (default YES), SIGNATURE_TYPE with values NONE / PUBKEY (uses a PUBKEY field) / FINGERPRINTS (uses external FINGERPRINTS dir with trusted/revoked subdirs of sha256 fingerprint files), PRIORITY (higher wins, default 0), and the ${ABI} substitution token expanding to e.g. FreeBSD:14:amd64.",
+        "evidence": "https://man.freebsd.org/cgi/man.cgi?query=pkg.conf&sektion=5",
+        "confidence": "verified"
+      },
+      {
+        "claim": "OPNsense's own fingerprints directory (installed by the core package, used by signature_type: fingerprints repos) follows exactly the trusted/ + revoked/ subdirectory layout that FreeBSD's fingerprints(5)/pkg.conf(5) expects, with one file per key-rotation date, each file a UCL block of function: \"sha256\" and fingerprint: \"<hex>\". A third-party repo choosing signature_type: fingerprints would need to ship an equivalent fingerprints dir (e.g. via its own conf's 'fingerprints' path, installed by whatever bootstraps the repo .conf) with the repo's own public-key fingerprint(s) under trusted/.",
+        "evidence": "https://github.com/opnsense/core/blob/26.7/src/etc/pkg/fingerprints/OPNsense/trusted/pkg.opnsense.org.20260608 (example file content: function: \"sha256\", fingerprint: \"9f3b76ff...\") and directory listing at https://github.com/opnsense/core/tree/26.7/src/etc/pkg/fingerprints/OPNsense",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Repository signing itself (producing the signed catalogue files pkg fetches) is done by the 'pkg repo' command: 'pkg repo <repo-path> [rsa:<keyfile> | ecdsa:<keyfile> | eddsa:<keyfile> | signing_command: <cmd>]' scans repo-path recursively for .pkg files and (re)generates the catalogue — meta.conf (UCL: version, packing_format, manifests/manifests_archive, data/data_archive, filesite/filesite_archive, maintainer, source, revision, eol), data.pkg (the primary JSON catalogue: groups/expired_packages/packages), and the legacy packagesite.pkg compatibility archive; '-o'/--output-dir redirects the generated files elsewhere and '-m' supplies a custom meta.conf template.",
+        "evidence": "https://man.freebsd.org/cgi/man.cgi?query=pkg-repo&sektion=8 and https://man.freebsd.org/cgi/man.cgi?query=pkg-repository&sektion=5",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Direct HTTP probing of the two real repos (pkg.opnsense.org/FreeBSD:14:amd64/26.7/latest/ and opn-repo.routerperformance.net/repo/FreeBSD:14:amd64/) returned 404/403 with no directory index, so the exact on-disk file names actually served today (packagesite.pkg vs legacy .txz, presence/absence of meta.conf at that exact path) could NOT be confirmed live; the meta.conf/data.pkg/packagesite.pkg naming above is sourced only from the pkg-repository(5) man page, not observed on either live repo.",
+        "evidence": "WebFetch of https://pkg.opnsense.org/FreeBSD:14:amd64/26.7/latest/meta.conf -> HTTP 404; WebFetch of https://opn-repo.routerperformance.net/repo/FreeBSD:14:amd64/ -> HTTP 403",
+        "confidence": "plausible"
+      },
+      {
+        "claim": "The realtek-re-kmod dependency package that realtek-re's PLUGIN_DEPENDS names is NOT itself built from the opnsense/plugins repo (no such package/kmod directory exists in opnsense/plugins) — it must come from OPNsense's separate kernel/vendor-driver build pipeline (not opnsense/plugins or opnsense/core) and be published into the same pkg repo namespace so pkg's dependency resolver can find it by name. This confirms the general pattern (a plugin's PLUGIN_DEPENDS can name an externally/separately-built kmod package) but the exact build repo for such kmod packages was not located/read in this pass.",
+        "evidence": "grep across https://github.com/opnsense/plugins/tree/26.7 found no 'kmod' target beyond the net/realtek-re Makefile referencing it as a bare PLUGIN_DEPENDS name (no local kmod build directory present)",
+        "confidence": "plausible"
+      }
+    ],
+    "open_questions": [
+      "Where (which repo/build pipeline) is realtek-re-kmod (and similar vendor -kmod packages) actually built and published from? Not opnsense/plugins or opnsense/core — likely opnsense/updates or a private OPNsense build system; not confirmed in this pass.",
+      "What exact on-disk filenames does a modern (pkg repo format v2) OPNsense/third-party repo serve today (packagesite.pkg vs packagesite.txz, meta.conf presence at the ABI/series/latest path)? Live probes to pkg.opnsense.org and the mimugmail repo both returned non-200 with no directory listing, so this is sourced from the pkg-repository(5) man page only, not observed.",
+      "Does the OPNsense-side +POST_INSTALL for a driver/kmod-style plugin need an explicit 'kldload' step, or is placement of a src/etc/rc.loader.d/<n>-<name> file (as realtek-re does, driving /boot/loader.conf.d style early load via rc.loader.d + rc.configure_firmware) always sufficient, versus doing an on-demand ifconfig-time kldload for a pppoeN clone interface that isn't wanted at every boot? Not investigated in this pass (out of scope: packaging, not the interface-integration mechanism)."
+    ]
+  },
+  {
+    "key": "kmodabi",
+    "findings": [
+      {
+        "claim": "opnsense-update's -k flag does a kernel-only update: it fetches kernel-${RELEASE}-${ARCH}${DEVICE}.txz, verifies signature, backs up the existing /boot/kernel and /boot/debug/kernel to .old, extracts the new set, and runs kldxref on the kernel dir. Crucially, a bare -k run does NOT touch installed packages: package flags stay unset unless -b/-k/-p (or the release-type flag) are combined, in which case the script re-execs itself with all flags together (source shows `if [ -n \"${DO_BASE}${DO_KERNEL}${DO_TYPE}\" ]` gating the combined re-exec). Default behavior per the manpage is the combined -bkp.",
+        "evidence": "https://github.com/opnsense/update/blob/master/src/update/opnsense-update.sh.in ; https://github.com/opnsense/update/blob/master/src/update/opnsense-update.8",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Kernel sets are versioned per point release, not just per major series: opnsense-update supports reverting to an older point release's kernel specifically, e.g. `opnsense-update -kr 18.1` reinstalls the 18.1 kernel build after having upgraded to 18.1.5 — meaning every point release (25.7.1, 25.7.2, ... not just 25.7 -> 26.1) ships its own kernel build in the repo.",
+        "evidence": "https://docs.opnsense.org/manual/opnsense_tools.html",
+        "confidence": "verified"
+      },
+      {
+        "claim": "Kernel-module-affecting KAPI/ABI changes happen frequently even within what upstream calls a stable branch, not just at major version boundaries — e.g. two separate 2025 commits changing the internal NFS module KAPI (\"all must be recompiled from sources\"), an ifconfig/bridge(4) ABI change requiring kernel+ifconfig to be updated together (2025-08-23), and a libvmmapi/vmm ABI change (2025-08-20). OPNsense tracks this FreeBSD src tree, so its kernel absorbs these breaks on the same cadence.",
+        "evidence": "https://github.com/opnsense/src/blob/master/UPDATING",
+        "confidence": "verified"
+      },
+      {
+        "claim": "FreeBSD's ports kmod build convention (USES=kmod) forces kernel modules to install under /boot/modules even if a port sets KMODDIR=/boot/kernel — the porters handbook states this rewrite exists specifically because a kernel update renames /boot/kernel to /boot/kernel.old, which would silently break/orphan any module installed there. Consequence: /boot/modules is NOT touched by a kernel-only update, so an old, now-ABI-mismatched third-party .ko can be left in place and still present after a kernel bump unless its package is explicitly reinstalled/rebuilt.",
+        "evidence": "https://docs.freebsd.org/en/books/porters-handbook/uses-kmod.html",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The real-world OPNsense analogue for this exact failure mode: on upgrade from 24.1.10 to 25.1.3, os-realtek-re (a vendor-driver kmod plugin) stopped working correctly until manually reinstalled. Root cause identified by an OPNsense maintainer (Franco) in the forum thread: pkg-static failed to (re)install the rc.loader.d hook file that arms the module for boot-time loading (\"Fail to rename /usr/local/etc/rc.loader.d/.pkgtemp.50-realtek-re...No such file or directory\"), i.e. the package-manager step that should have re-pinned the kmod to the new kernel/release silently failed.",
+        "evidence": "https://forum.opnsense.org/index.php?topic=46380.0",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The actual kmod port (net/realtek-re-kmod in opnsense/ports, mirroring FreeBSD ports) is built with plain USES=kmod and PLIST_FILES=${KMODDIR}/if_re.ko — no custom ABI-pinning logic, PKGNAMESUFFIX-based kernel tagging, or manual version annotation. It relies entirely on being rebuilt from source against each release's own kernel/src tree in OPNsense's own package build, i.e. \"rebuild per release\" is the actual mechanism, not a runtime-negotiated ABI.",
+        "evidence": "https://raw.githubusercontent.com/opnsense/ports/master/net/realtek-re-kmod/Makefile",
+        "confidence": "verified"
+      },
+      {
+        "claim": "The os-realtek-re plugin (opnsense/plugins) wraps the kmod via a shared plugin-build mechanism: Mk/plugins.mk auto-appends the Templates/rc.loader.d snippet into a plugin's generated +POST_INSTALL and +POST_DEINSTALL scripts whenever the plugin ships a src/etc/rc.loader.d directory. At boot, core/src/etc/rc.loader concatenates every file under /usr/local/etc/rc.loader.d/ (lexicographic order) into /boot/loader.conf; the actual kldload of the vendor driver then happens via the FreeBSD boot loader itself (loader.conf tunables), not late in userland rc.d — meaning a broken/mismatched module reference here risks affecting early boot, not just a late rc script failure.",
+        "evidence": "https://raw.githubusercontent.com/opnsense/plugins/master/Mk/plugins.mk ; https://raw.githubusercontent.com/opnsense/core/master/src/etc/rc.loader ; https://raw.githubusercontent.com/opnsense/plugins/master/Templates/rc.loader.d",
+        "confidence": "verified"
+      },
+      {
+        "claim": "FreeBSD's kernel linker does perform an automatic version check at kldload time: every compiled .ko embeds __FreeBSD_version from the build tree's sys/param.h at compile time, and kldload compares this against the running kernel's kern.osreldate, refusing to load and printing \"KLD <mod>.ko: depends on kernel - not available or version mismatch\" on any mismatch. This is a real safety net against loading a module built against a different kernel tree, but it is enforced only at kldload time — if the module is wired into /boot/loader.conf as a mandatory boot-time load, the failure surfaces during early boot rather than being avoidable in advance.",
+        "evidence": "https://forums.freebsd.org/threads/kld-load-depends-on-kernel-not-avail-or-version-mismatch.57644/",
+        "confidence": "verified"
+      },
+      {
+        "claim": "pkg's own ABI tag (e.g. FreeBSD:14:amd64) operates at major-branch/arch granularity only. Community guidance for out-of-tree, kernel-exact-dependent modules (e.g. graphics/drm-kmod) explicitly warns that a module built for 15.0 will happily satisfy pkg's ABI match on 15.1 yet crash the kernel, because kmods (unlike userland packages) depend on the exact kernel build, not just the release-branch ABI tag. This means pkg dependency resolution alone cannot be trusted to catch the intra-branch KAPI breaks documented in the UPDATING file above.",
+        "evidence": "https://forums.freebsd.org/threads/drm-kmod-oddity.85652/ (community explanation) plus https://github.com/opnsense/src/blob/master/UPDATING for the concrete intra-branch breaks",
+        "confidence": "plausible"
+      },
+      {
+        "claim": "os-wireguard-kmod's own history illustrates the same rebuild-per-release dependency risk from the other direction: OPNsense eventually moved WireGuard kernel support into core specifically to control this coupling (kernel module compilation re-enabled in the opnsense/tools build for the 24.1 cycle, wireguard-kmod dependency removed from stable/24.1) rather than continue shipping it as an independently-versioned plugin package.",
+        "evidence": "https://github.com/opnsense/core/issues/6827",
+        "confidence": "plausible"
+      }
+    ],
+    "open_questions": [
+      "Whether the FreeBSD kernel-linker's __FreeBSD_version vs kern.osreldate check (evidence: forums thread 57644) requires an EXACT match or tolerates a range — I could not find the exact comparison logic in kern_linker.c/link_elf.c from source in this session; treat exact-match as the safe assumption for if_pppoe.ko's own load-time self-check.",
+      "Whether os-vmware and os-virtualbox plugins in opnsense/plugins currently ship an actual out-of-tree .ko at all, or only userland guest-tools/rc.syshook scripts around drivers already in GENERIC — the sysutils/virtualbox plugin directory I could inspect showed only Makefile/pkg-descr/rc.syshook.d, no kmod files, so I could not confirm a kmod-pinning precedent from either of these two plugins specifically (unlike realtek-re-kmod, which is clearly confirmed).",
+      "Exact ordering within a combined `-bkp` opnsense-update run: does the package (kmod) reinstall pass happen strictly after the new kernel set is live and kldxref'd, or could there be a window where the old package's .ko is still on disk referenced by loader.conf while the new kernel is already active before pkg upgrade completes? The pre-push/upgrade script source I read doesn't make this ordering fully explicit.",
+      "Whether opnsense-update's package step actually force-reinstalls (pkg upgrade -f style) kmod-owning plugin packages whenever the kernel changed underneath them, or only when the plugin's own package version changed in the repo — the realtek forum thread implies the former is the intended behavior but was defeated by a pkg-static file-rename bug, not a design gap; I did not find the exact pkg upgrade logic that drives this from opnsense-update source in this session."
+    ]
+  }
+]

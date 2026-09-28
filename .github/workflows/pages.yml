@@ -1,0 +1,102 @@
+# Publishes a release's signed pkg repos to GitHub Pages as <ABI>/, one per
+# FreeBSD ABI. workflow_run (release.yml) and workflow_call (nightly.yml's
+# kernel-only refresh), not only `release:`: a Release created with
+# GITHUB_TOKEN never triggers other workflows. See docs/CI.md#github-pages.
+name: pages
+
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag to publish (default latest)
+        required: false
+  workflow_call:
+    inputs:
+      tag:
+        description: release tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: >-
+      vars.ENABLE_PAGES == 'true'
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Determine release to publish
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          latest() { gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'; }
+          if [ -n "$INPUT_TAG" ]; then
+            # workflow_dispatch, or workflow_call (which keeps the caller's event name).
+            tag=$INPUT_TAG
+          else
+            case "$EVENT_NAME" in
+              release) tag=$RELEASE_TAG_NAME ;;
+              # head_branch carries the pushed tag for a tag-triggered run.
+              workflow_run) tag=$RUN_TAG; gh release view "$tag" --json tagName >/dev/null 2>&1 || tag=$(latest) ;;
+              *) tag=$(latest) ;;
+            esac
+          fi
+          [ -n "$tag" ] || { echo "::error::no release found to publish"; exit 1; }
+          gh release view "$tag" --json tagName >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble site from if_pppoe-repo-<ABI>.tar.gz
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          gh release download "$RELEASE_TAG" --dir dl --pattern 'if_pppoe-repo-*.tar.gz'
+          for f in kernels.json compat.json coverage.json; do
+            gh release download "$RELEASE_TAG" --dir dl --pattern "$f" || echo "::warning::$RELEASE_TAG has no $f asset"
+          done
+          bash .github/scripts/pages-site.sh dl _site "$RELEASE_TAG"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

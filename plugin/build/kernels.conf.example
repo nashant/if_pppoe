@@ -1,0 +1,7 @@
+# Copy to kernels.conf and fill in real paths on the build host.
+# <build_id> <KERNBUILDDIR> <SYSDIR>
+#
+# build_id: sysctl -n kern.build_id on a box running this exact kernel.
+# KERNBUILDDIR/SYSDIR: as collected by lab/vm/build-module.sh / build-kernel.sh.
+#
+# example-25.7.11-smp /home/build/if_pppoe-lab/kernel/SMP/obj/.../SMP /home/build/if_pppoe-lab/src/sys

@@ -1,0 +1,26 @@
+#!/bin/sh
+# Full manual override (plugins.mk's scripts-auto never targets
+# +PRE_DEINSTALL, so nothing framework-generated is lost here).
+#
+# pkg-script(5)'s documented upgrade order is: new pre-install, OLD
+# pre-deinstall, replace binaries, new post-install. So on upgrade this is
+# the outgoing version running before the incoming one's own +POST_INSTALL;
+# doing a teardown here would fight that incoming install. Defer instead.
+if [ -n "${PKG_UPGRADE:-}" ]; then
+	logger -t if_pppoe -p daemon.info "if-pppoe: upgrade in progress, not tearing down"
+	exit 0
+fi
+
+SCRIPTS_DIR=/usr/local/opnsense/scripts/if_pppoe
+
+# Run in the foreground, from the installed location: pkg does not unlink
+# this package's files until AFTER +PRE_DEINSTALL returns (pkg-script(5)),
+# and a backgrounded job would be SIGKILLed by pkg's reaper the instant
+# this script exits (see uninstall.sh's header comment) -- so it must
+# finish here, not be handed off.
+if [ -x "$SCRIPTS_DIR/uninstall.sh" ]; then
+	"$SCRIPTS_DIR/uninstall.sh"
+else
+	logger -t if_pppoe -p daemon.err "if-pppoe: uninstall.sh missing at removal time; skipping teardown"
+fi
+exit 0

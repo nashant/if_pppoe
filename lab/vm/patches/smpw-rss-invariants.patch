@@ -1,0 +1,78 @@
+diff --git a/sys/netinet/ip_input.c b/sys/netinet/ip_input.c
+index a57d32965..dd190967c 100644
+--- a/sys/netinet/ip_input.c
++++ b/sys/netinet/ip_input.c
+@@ -269,12 +269,22 @@ sysctl_netinet_intr_direct_queue_maxlen(SYSCTL_HANDLER_ARGS)
+ {
+ 	int error, qlimit;
+ 
+-	netisr_getqlimit(&ip_direct_nh, &qlimit);
++	/* Lab SMPW (INVARIANTS) workaround: ip_direct is only registered
++	 * when RSS is enabled at runtime (see ip_init); netisr_getqlimit/
++	 * netisr_setqlimit KASSERT on an unregistered protocol, so reading
++	 * this oid panics an INVARIANTS kernel. Mirror the registration
++	 * condition instead of asserting. */
++	if (!rss_get_enabled())
++		qlimit = 0;
++	else
++		netisr_getqlimit(&ip_direct_nh, &qlimit);
+ 	error = sysctl_handle_int(oidp, &qlimit, 0, req);
+ 	if (error || !req->newptr)
+ 		return (error);
+ 	if (qlimit < 1)
+ 		return (EINVAL);
++	if (!rss_get_enabled())
++		return (0);
+ 	return (netisr_setqlimit(&ip_direct_nh, qlimit));
+ }
+ SYSCTL_PROC(_net_inet_ip, IPCTL_INTRDQMAXLEN, intr_direct_queue_maxlen,
+@@ -288,13 +298,20 @@ sysctl_netinet_intr_direct_queue_drops(SYSCTL_HANDLER_ARGS)
+ 	u_int64_t qdrops_long;
+ 	int error, qdrops;
+ 
+-	netisr_getqdrops(&ip_direct_nh, &qdrops_long);
++	/* Lab SMPW (INVARIANTS) workaround: see
++	 * sysctl_netinet_intr_direct_queue_maxlen. */
++	if (!rss_get_enabled())
++		qdrops_long = 0;
++	else
++		netisr_getqdrops(&ip_direct_nh, &qdrops_long);
+ 	qdrops = qdrops_long;
+ 	error = sysctl_handle_int(oidp, &qdrops, 0, req);
+ 	if (error || !req->newptr)
+ 		return (error);
+ 	if (qdrops != 0)
+ 		return (EINVAL);
++	if (!rss_get_enabled())
++		return (0);
+ 	netisr_clearqdrops(&ip_direct_nh);
+ 	return (0);
+ }
+diff --git a/sys/netinet6/ip6_input.c b/sys/netinet6/ip6_input.c
+index 41965eda6..d37537d0b 100644
+--- a/sys/netinet6/ip6_input.c
++++ b/sys/netinet6/ip6_input.c
+@@ -190,12 +190,22 @@ sysctl_netinet6_intr_direct_queue_maxlen(SYSCTL_HANDLER_ARGS)
+ {
+ 	int error, qlimit;
+ 
+-	netisr_getqlimit(&ip6_direct_nh, &qlimit);
++	/* Lab SMPW (INVARIANTS) workaround: ip6_direct is only registered
++	 * when RSS is enabled at runtime (see ip6_init); netisr_getqlimit/
++	 * netisr_setqlimit KASSERT on an unregistered protocol, so reading
++	 * this oid panics an INVARIANTS kernel. Mirror the registration
++	 * condition instead of asserting. */
++	if (!rss_get_enabled())
++		qlimit = 0;
++	else
++		netisr_getqlimit(&ip6_direct_nh, &qlimit);
+ 	error = sysctl_handle_int(oidp, &qlimit, 0, req);
+ 	if (error || !req->newptr)
+ 		return (error);
+ 	if (qlimit < 1)
+ 		return (EINVAL);
++	if (!rss_get_enabled())
++		return (0);
+ 	return (netisr_setqlimit(&ip6_direct_nh, qlimit));
+ }
+ SYSCTL_PROC(_net_inet6_ip6, IPV6CTL_INTRDQMAXLEN, intr_direct_queue_maxlen,

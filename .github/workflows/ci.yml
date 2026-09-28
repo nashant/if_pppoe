@@ -1,0 +1,140 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # renovate: datasource=github-releases depName=rhysd/actionlint
+  ACTIONLINT_VERSION: 1.7.12
+  # renovate: datasource=npm depName=renovate
+  RENOVATE_VERSION: 44.115.10
+  # renovate: datasource=pypi depName=yamllint
+  YAMLLINT_VERSION: 1.38.0
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.m.outputs.build }}
+      php: ${{ steps.m.outputs.php }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: m
+        run: |
+          echo "build=$(sh .github/scripts/matrix.sh abi supported,experimental)" >> "$GITHUB_OUTPUT"
+          echo "php=$(sh .github/scripts/matrix.sh php)" >> "$GITHUB_OUTPUT"
+
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install linters
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends shellcheck
+          pipx install "yamllint==${YAMLLINT_VERSION}"
+          curl -fsSL -o /tmp/actionlint.tgz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o /tmp/actionlint.sums \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          (cd /tmp && grep " actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz\$" actionlint.sums \
+            | sed 's/actionlint_.*/actionlint.tgz/' | sha256sum -c -)
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+      - name: shellcheck
+        run: sh .github/scripts/lint-shell.sh
+      - name: actionlint
+        # queue: max (publish.yml) is valid GitHub syntax that actionlint 1.7.12 does not know yet.
+        run: /tmp/actionlint -color -ignore 'unexpected key "queue" for "concurrency" section'
+      - name: yamllint
+        run: yamllint -s .github/
+      - name: versions.json schema
+        run: |
+          jq -e '
+            .entries | length > 0 and all(.[];
+              (.status == "supported" or .status == "experimental")
+              and (.opnsense_series | test("^[0-9]+\\.[0-9]+$"))
+              and (.opnsense_series as $s | [.opnsense_core_tag, .opnsense_src_tag] | all(. == $s or startswith($s + ".")))
+              and (.kernel_sets_url | test("^https://pkg\\.opnsense\\.org/FreeBSD:[0-9]+:amd64/[0-9.]+/sets/$"))
+              and ([.opnsense_src_tag, .freebsd_version, .freebsd_abi, .php_version,
+                    .python_version, .kernconf] | all(type == "string" and length > 0)))
+          ' .github/versions.json
+      - name: renovate-config-validator
+        run: npx --yes --package "renovate@${RENOVATE_VERSION}" -- renovate-config-validator --strict
+      - name: packaging checks (plugin/build/test-packaging.sh)
+        run: sh plugin/build/test-packaging.sh
+      - name: plugin UI suite (tests/plugin/p4-ui, docker php 8.2-8.5)
+        run: sh tests/plugin/p4-ui/run.sh
+
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12' # tests/perf/README.md: 3.12+
+          cache: pip
+          cache-dependency-path: |
+            tests/requirements-dev.txt
+            tests/plugin/requirements.txt
+      - run: python -m pip install -r tests/requirements-dev.txt -r tests/plugin/requirements.txt
+      # Separate invocations: tests/functional and tests/plugin each have a
+      # top-level conftest.py and collide in one session (conftest name clash).
+      - name: tests/perf
+        run: python -m pytest -q tests/perf
+      - name: tests/plugin (live-DUT round trip self-skips)
+        run: python -m pytest -q tests/plugin
+      - name: tests/functional/test_client_seam.py (off-lab seam tests only)
+        run: python -m pytest -q tests/functional/test_client_seam.py
+      - name: lab/vm/test_console_driver.py
+        run: python -m pytest -q lab/vm/test_console_driver.py
+
+  php:
+    name: php ${{ matrix.php_version }} (${{ matrix.series }})${{ matrix.experimental && ' [experimental]' || '' }}
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.php) }}
+    env:
+      IMAGE: php:${{ matrix.php_version }}-cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker pull -q "$IMAGE"
+      - name: engine suite
+        run: docker run --rm -v "$PWD:/r:ro" -w /r "$IMAGE" sh plugin/net/if-pppoe/tests/engine/run.sh
+      - name: hook suite
+        run: docker run --rm -v "$PWD:/r:ro" -w /r "$IMAGE" sh plugin/net/if-pppoe/tests/hook/run.sh
+
+  build:
+    needs: setup
+    uses: ./.github/workflows/build.yml
+    with:
+      matrix: ${{ needs.setup.outputs.build }}
+      smoke: true
+      # PRs smoke the newest kernel of each series (plus cached results);
+      # releases and nightly refreshes smoke every untested build_id.
+      smoke-scope: latest-per-series
+      dial: true

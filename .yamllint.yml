@@ -1,0 +1,11 @@
+---
+# GitHub Actions flavoured yamllint (ci.yml runs `yamllint -s .github/`).
+extends: default
+rules:
+  document-start: disable
+  truthy:
+    check-keys: false # `on:` is a key, not a boolean
+  comments:
+    min-spaces-from-content: 1 # `uses: x@<sha> # vX.Y.Z` (Renovate's pin format)
+  line-length:
+    max: 200

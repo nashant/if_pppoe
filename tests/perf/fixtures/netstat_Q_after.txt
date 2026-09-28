@@ -1,0 +1,47 @@
+Configuration:
+Setting                        Current        Limit
+Thread count                         4            4
+Default queue limit                256        10240
+Dispatch policy                 direct          n/a
+Threads bound to CPUs          enabled          n/a
+
+Protocols:
+Name   Proto QLimit Policy Dispatch Flags
+ip         1    256   flow  default   ---
+igmp       2    256 source  default   ---
+rtsock     3    256 source  default   ---
+arp        4    256 source  default   ---
+ether      5    256 source   direct   ---
+ip6        6    256   flow  default   ---
+pppoe     11   1000    cpu   hybrid   C--
+
+Workstreams:
+WSID CPU   Name     Len WMark   Disp'd  HDisp'd   QDrops   Queued  Handled
+   0   0   ip         0     0    53119        0        0        0    53119
+   0   0   igmp       0     0        0        0        0        0        0
+   0   0   rtsock     0     6        0        0        0      110      110
+   0   0   arp        0     0        0        0        0        0        0
+   0   0   ether      0     0   641019        0        0        0   641019
+   0   0   ip6        0     0        0        0        0        0        0
+   0   0   pppoe      0     5        0    22261        0        6    22267
+   1   1   ip         0     0    52280        0        0        0    52280
+   1   1   igmp       0     0        0        0        0        0        0
+   1   1   rtsock     0     0        0        0        0        0        0
+   1   1   arp        0     0       11        0        0        0       11
+   1   1   ether      0     0    54409        0        0        0    54409
+   1   1   ip6        0     1      141        0        0        1      142
+   1   1   pppoe      0     0        0        0        0        0        0
+   2   2   ip         0     0    26911        0        0        0    26911
+   2   2   igmp       0     0        0        0        0        0        0
+   2   2   rtsock     0     0        0        0        0        0        0
+   2   2   arp        0     0        1        0        0        0        1
+   2   2   ether      0     0    28098        0        0        0    28098
+   2   2   ip6        0     1        0        0        0        3        3
+   2   2   pppoe      0   166        0      829        0   398468   399297
+   3   3   ip         0     0  3696368        0        0        0  3696368
+   3   3   igmp       0     0        0        0        0        0        0
+   3   3   rtsock     0     0        0        0        0        0        0
+   3   3   arp        0     0     1246        0        0        0     1246
+   3   3   ether      0     0  3698609        0        0        0  3698609
+   3   3   ip6        0     1        0        0        0        3        3
+   3   3   pppoe      0    97        0      268        0   164766   165034

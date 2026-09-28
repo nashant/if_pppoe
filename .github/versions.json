@@ -1,0 +1,42 @@
+{
+  "$comment": "Single source of truth for the CI/release build matrix. See docs/CI.md#adding-a-version. Field order inside each entry matters: renovate.json's regex managers expect kernel_sets_url immediately before opnsense_src_tag.",
+  "entries": [
+    {
+      "opnsense_series": "25.7",
+      "status": "supported",
+      "freebsd_version": "14.3",
+      "freebsd_abi": "FreeBSD:14:amd64",
+      "php_version": "8.3",
+      "python_version": "3.11",
+      "kernconf": "SMP",
+      "opnsense_core_tag": "25.7.11",
+      "kernel_sets_url": "https://pkg.opnsense.org/FreeBSD:14:amd64/25.7/sets/",
+      "opnsense_src_tag": "25.7.11"
+    },
+    {
+      "opnsense_series": "26.1",
+      "status": "experimental",
+      "freebsd_version": "14.3",
+      "freebsd_abi": "FreeBSD:14:amd64",
+      "php_version": "8.3",
+      "python_version": "3.13",
+      "kernconf": "SMP",
+      "opnsense_core_tag": "26.1.11",
+      "kernel_sets_url": "https://pkg.opnsense.org/FreeBSD:14:amd64/26.1/sets/",
+      "opnsense_src_tag": "26.1.11"
+    },
+    {
+      "opnsense_series": "26.7",
+      "status": "experimental",
+      "freebsd_version": "15.1",
+      "freebsd_abi": "FreeBSD:15:amd64",
+      "php_version": "8.5",
+      "python_version": "3.13",
+      "kernconf": "SMP",
+      "opnsense_core_tag": "26.7.4",
+      "kernel_sets_url": "https://pkg.opnsense.org/FreeBSD:15:amd64/26.7/sets/",
+      "opnsense_src_tag": "26.7.4",
+      "needs_port": true
+    }
+  ]
+}

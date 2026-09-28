@@ -1,0 +1,12 @@
+if_pppoe(4), the in-kernel PPPoE driver, plus pppoectl(8) to control it.
+
+Ships one if_pppoe.ko per exact kernel build it was compiled against
+(see /usr/local/share/if_pppoe/build_ids for the list this package carries),
+installed under /usr/local/lib/if_pppoe/<kern.build_id>/. Nothing loads it
+automatically: the if-pppoe plugin's boot hook checks the running kernel's
+own build_id against that list before kldload'ing the matching copy by exact
+path, and falls back to userland mpd5 on any mismatch.
+
+Kernels covered by this package build: %%BUILD_IDS%%
+
+WWW: https://github.com/nashant/if_pppoe

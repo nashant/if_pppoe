@@ -1,0 +1,181 @@
+<?xml version="1.0"?>
+<!--
+  Seed config.xml for the "dut" plugin-test VM. Modeled on OPNsense's own
+  factory-default template (opnsense/core@41587bb2d45af01811f580438dd758b8d45c9541,
+  src/etc/config.xml.sample, tag 25.7.11: installed on every box as
+  /usr/local/etc/config.xml, the exact file OPNsense's own Config::init()
+  falls back to when /conf/config.xml is missing/invalid, per
+  src/opnsense/mvc/app/library/OPNsense/Core/Config.php init(), L318/L344).
+  Sections not needed for plugin testing (dnsmasq/unbound/nat/filter/rrd/ntpd)
+  are kept close to that stock template; only hostname, users, interfaces and
+  ppps differ. Booted end to end on 2026-09-28 (see lab/vm/README.md "dut").
+
+  @API_KEY@, @API_SECRET_HASH@, @ROOT_AUTHORIZED_KEYS_B64@, @PPPOE_USERNAME@,
+  @PPPOE_PASSWORD_B64@, @PPPOE_SERVICE_NAME@ are filled in by make-dut-seed.py
+  from per-run values plugin-roundtrip.sh generates (nothing here is a
+  standing credential; see that script).
+
+  root has NO password: <password>*</password> is a locked, never-matching
+  value, not a hash. It must not be empty: auth.inc local_user_set()
+  (25.7.11) skips a user whose <password> is empty ("password is missing"),
+  which would also skip writing root's authorized_keys. See make-dut-seed.py.
+
+  ssh: <permitrootlogin> and <authorizedkeys> are load-bearing, not cosmetic:
+  without them core's openssh.inc (src/etc/inc/plugins.inc.d/openssh.inc,
+  25.7.11, L172-183) writes 'PermitRootLogin no' when <permitrootlogin> is
+  absent and 'PasswordAuthentication no' when <passwordauth> is absent, and
+  root has no ssh key seeded elsewhere, so every ssh-based step (provision-dut.sh's
+  own boot-wait, and every dut_ssh_run in tests/plugin/conftest.py) would time
+  out logging in. Key-based auth (authorizedkeys), not password auth, is the
+  fix: password auth stays off (<passwordauth> stays absent), and the only
+  key is the run's ephemeral one.
+-->
+<opnsense>
+  <theme>opnsense</theme>
+  <sysctl/>
+  <system>
+    <optimization>normal</optimization>
+    <hostname>dut</hostname>
+    <domain>if-pppoe.lab</domain>
+    <dnsallowoverride>1</dnsallowoverride>
+    <dnsallowoverride_exclude/>
+    <group>
+      <name>admins</name>
+      <description>System Administrators</description>
+      <scope>system</scope>
+      <gid>1999</gid>
+      <member>0</member>
+      <priv>page-all</priv>
+    </group>
+    <user>
+      <name>root</name>
+      <descr>System Administrator</descr>
+      <scope>system</scope>
+      <groupname>admins</groupname>
+      <password>*</password>
+      <uid>0</uid>
+      <!-- base64 of an authorized_keys-format blob (one pubkey line), the
+           same shape the user-edit page writes: src/www/system_usermanager.php
+           reads/writes this field as base64(file_get_contents(authorized_keys)). -->
+      <authorizedkeys>@ROOT_AUTHORIZED_KEYS_B64@</authorizedkeys>
+      <!-- ApiKeyField::setValue (Auth/FieldTypes/ApiKeyField.php) reads this
+           shape (item/key, item/secret) and stores "key|crypted_secret". -->
+      <apikeys>
+        <item>
+          <key>@API_KEY@</key>
+          <secret>@API_SECRET_HASH@</secret>
+        </item>
+      </apikeys>
+    </user>
+    <timezone>Etc/UTC</timezone>
+    <timeservers>0.opnsense.pool.ntp.org 1.opnsense.pool.ntp.org 2.opnsense.pool.ntp.org 3.opnsense.pool.ntp.org</timeservers>
+    <webgui>
+      <protocol>https</protocol>
+    </webgui>
+    <disablenatreflection>yes</disablenatreflection>
+    <usevirtualterminal>1</usevirtualterminal>
+    <disablevlanhwfilter>1</disablevlanhwfilter>
+    <disablechecksumoffloading>1</disablechecksumoffloading>
+    <disablesegmentationoffloading>1</disablesegmentationoffloading>
+    <disablelargereceiveoffloading>1</disablelargereceiveoffloading>
+    <ipv6allow>1</ipv6allow>
+    <bogons>
+      <interval>monthly</interval>
+    </bogons>
+    <pf_share_forward>1</pf_share_forward>
+    <lb_use_sticky>1</lb_use_sticky>
+    <ssh>
+      <group>admins</group>
+      <enabled>1</enabled>
+      <permitrootlogin>1</permitrootlogin>
+    </ssh>
+    <!-- serial console: without this, system.inc's console setup
+         (src/etc/inc/system.inc, 25.7.11, L1215-1293) writes no comconsole
+         to loader.conf and leaves ttyu0 "off secure"; after the FIRST
+         seeded reboot the console socket (the only out-of-band path if ssh
+         or the API ever breaks) would go dark for good. -->
+    <primaryconsole>serial</primaryconsole>
+    <serialspeed>115200</serialspeed>
+    <rrdbackup>-1</rrdbackup>
+    <netflowbackup>-1</netflowbackup>
+  </system>
+  <interfaces>
+    <!--
+      Physical NIC order = qemu -device order in run.sh: n0 (user-mode,
+      unused here) -> vtnet0, n1 (WAN, bridged to br-isp) -> vtnet1, n2
+      (LAN, bridged to br-dut-lan) -> vtnet2. Matches the same
+      order-of-attachment convention lab/vm/README.md already documents for
+      the `client` VM's vtnet1.
+    -->
+    <wan>
+      <enable>1</enable>
+      <if>pppoe0</if>
+      <mtu/>
+      <ipaddr>pppoe</ipaddr>
+      <ipaddrv6>dhcp6</ipaddrv6>
+      <subnet/>
+      <gateway/>
+      <blockpriv>1</blockpriv>
+      <blockbogons>1</blockbogons>
+      <dhcp6-ia-pd-len>0</dhcp6-ia-pd-len>
+    </wan>
+    <lan>
+      <enable>1</enable>
+      <if>vtnet2</if>
+      <ipaddr>192.168.90.2</ipaddr>
+      <subnet>24</subnet>
+      <media/>
+      <mediaopt/>
+    </lan>
+  </interfaces>
+  <ppps>
+    <ppp>
+      <ptpid>0</ptpid>
+      <type>pppoe</type>
+      <if>pppoe0</if>
+      <ports>vtnet1</ports>
+      <username>@PPPOE_USERNAME@</username>
+      <password>@PPPOE_PASSWORD_B64@</password>
+      <provider>@PPPOE_SERVICE_NAME@</provider>
+      <mtu>1492</mtu>
+      <mru>1492</mru>
+    </ppp>
+  </ppps>
+  <nat>
+    <outbound>
+      <mode>automatic</mode>
+    </outbound>
+  </nat>
+  <filter>
+    <rule>
+      <type>pass</type>
+      <ipprotocol>inet</ipprotocol>
+      <descr>Default allow LAN to any rule</descr>
+      <interface>lan</interface>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <any/>
+      </destination>
+    </rule>
+    <rule>
+      <type>pass</type>
+      <ipprotocol>inet6</ipprotocol>
+      <descr>Default allow LAN IPv6 to any rule</descr>
+      <interface>lan</interface>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <any/>
+      </destination>
+    </rule>
+  </filter>
+  <rrd>
+    <enable/>
+  </rrd>
+  <ntpd>
+    <prefer>0.opnsense.pool.ntp.org</prefer>
+  </ntpd>
+</opnsense>

@@ -1,0 +1,7 @@
+ITEM                   SIZE  LIMIT     USED     FREE      REQ FAIL SLEEP XDOM
+mbuf_packet:            256,      0,    2103,     728,  539089502,   0,   0,   3
+mbuf:                   256,      0,     182,    1247, 1761199755,   0,   0,   0
+mbuf_cluster:          2048,  25600,    2831,     511,    3053398,   0,   0,   0
+mbuf_jumbo_page:       4096,  12800,      14,     525,   69180199,   0,   0,   0
+mbuf_jumbo_9k:         9216,   6400,       0,       0,          0,   0,   0,   0
+mbuf_jumbo_16k:       16384,   3200,       0,       0,          0,   0,   0,   0

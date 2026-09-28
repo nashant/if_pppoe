@@ -1,0 +1,125 @@
+# Reusable: turn this run's build.yml artifacts (one signed repo per FreeBSD
+# ABI) into a GitHub Release. Called by release.yml (code release, tag pushed)
+# and nightly.yml (kernel-only refresh, tag created here). See
+# docs/CI.md#releases.
+name: publish
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: release tag (v<ver> or v<ver>_<N>)
+        required: true
+        type: string
+      target:
+        description: commit to create the tag at when it does not exist yet (refresh); empty = the tag must already exist
+        required: false
+        type: string
+        default: ''
+      matrix:
+        description: 'matrix.sh abi output: {"include":[{freebsd_abi, series, status, ...}]}'
+        required: true
+        type: string
+      notes:
+        description: text at the top of the release notes
+        required: false
+        type: string
+        default: ''
+      require-build-ids:
+        description: 'refresh: the new build_ids; failed ones are dropped and reported, one of a supported ABI with no smoke result (or none covered or smoked) publishes nothing'
+        required: false
+        type: string
+        default: ''
+    outputs:
+      published:
+        description: "'true' when the release was created ('false': a refresh superseded by a newer code release)"
+        value: ${{ jobs.publish.outputs.published }}
+      dropped-new:
+        description: 'refresh: new build_ids dropped because they failed smoke, "abi bid version reason" per line'
+        value: ${{ jobs.publish.outputs.dropped-new }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    # release.yml and nightly.yml each publish here; one at a time, so the
+    # supersede check below and `gh release create` cannot interleave.
+    # queue: max keeps every waiting publish (FIFO) instead of the default of
+    # cancelling an older pending one.
+    concurrency:
+      group: repo-publish
+      cancel-in-progress: false
+      queue: max
+    outputs:
+      published: ${{ steps.create.outputs.published }}
+      dropped-new: ${{ steps.assets.outputs.dropped-new }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ inputs.tag }}
+      TARGET: ${{ inputs.target }}
+      MATRIX: ${{ inputs.matrix }}
+      NOTES: ${{ inputs.notes }}
+      REQUIRE_BUILD_IDS: ${{ inputs.require-build-ids }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Every artifact of this run (kernels, compat, pass-build-ids-*, kmods-*,
+      # pkg-*, smoke logs); release-assets.sh picks files by name.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+
+      - name: Assemble release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          bash .github/scripts/release-assets.sh dist "$RUNNER_TEMP/rel/assets"
+          {
+            echo 'dropped-new<<EOF_DROPPED'
+            cat "$RUNNER_TEMP/rel/dropped-new.txt"
+            echo 'EOF_DROPPED'
+          } >> "$GITHUB_OUTPUT"
+
+      # A refresh (target set) rebuilds the code release that was latest when
+      # nightly.yml started. A code release published meanwhile (release.yml
+      # takes hours and runs in parallel) must stay latest: publishing
+      # v<old>_<N> with --latest would make pages.yml serve old code and make
+      # the next nightly refresh the old release. Skip, not fail: the next
+      # nightly refreshes the new release instead.
+      - name: Create GitHub Release
+        id: create
+        run: |
+          set -euo pipefail
+          if [ -n "$TARGET" ]; then
+            latest=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+            want=$(sh .github/scripts/refresh-plan.sh base-version "$TAG")
+            have=$([ -z "$latest" ] || sh .github/scripts/refresh-plan.sh base-version "$latest")
+            if [ "$have" != "$want" ]; then
+              echo "::notice::latest release is now ${latest:-none}, not a v$want release; refresh $TAG not published"
+              echo "Refresh $TAG skipped: superseded by ${latest:-none}." >> "$GITHUB_STEP_SUMMARY"
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            echo "::error::release $TAG already exists; a refresh number or version is never reused"
+            exit 1
+          fi
+          if [ -n "$TARGET" ]; then
+            printf '%s' "$TARGET" | grep -Eqx '[0-9a-f]{40}' || { echo "::error::target must be a commit sha, got $TARGET"; exit 1; }
+            where=(--target "$TARGET")
+          else
+            where=(--verify-tag)
+          fi
+          gh release create "$TAG" "${where[@]}" --latest --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/rel/notes.md" "$RUNNER_TEMP"/rel/assets/*
+          echo "published=true" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/rel/notes.md" >> "$GITHUB_STEP_SUMMARY"

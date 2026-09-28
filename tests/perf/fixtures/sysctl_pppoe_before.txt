@@ -1,0 +1,1 @@
+net.pppoe.cpu_hits: cpu0=22248 cpu1=0 cpu2=21 cpu3=8

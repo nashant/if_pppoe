@@ -1,0 +1,76 @@
+# Tag vX.Y[.Z] (code release) -> discover every published OPNsense kernel,
+# build one if-pppoe-kmod per FreeBSD ABI with a .ko per kern.build_id, smoke
+# every build_id not already cached as passing, and publish one signed pkg
+# repo per ABI as a GitHub Release. Kernel-only refreshes (v<ver>_<N>) come
+# from nightly.yml, never from a pushed tag.
+# Secrets/variables: docs/CI.md#secrets-and-variables.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: v
+        env:
+          TAG: ${{ github.ref_name }}
+          HAVE_KEY: ${{ secrets.IF_PPPOE_REPO_SIGNING_KEY != '' }}
+          REPO_URL_BASE: ${{ vars.IF_PPPOE_REPO_URL_BASE }}
+        run: |
+          version=${TAG#v}
+          case "$version" in
+            *_*) echo "::error::$TAG: v<ver>_<N> tags are kernel-only refreshes and are created by nightly.yml, not pushed"; exit 1 ;;
+          esac
+          plugin=$(sed -n 's/^PLUGIN_VERSION=[[:space:]]*//p' plugin/net/if-pppoe/Makefile)
+          [ "$version" = "$plugin" ] || { echo "::error::tag $TAG != plugin/net/if-pppoe/Makefile PLUGIN_VERSION=$plugin"; exit 1; }
+          [ "$HAVE_KEY" = true ] || { echo "::error::secret IF_PPPOE_REPO_SIGNING_KEY is not set"; exit 1; }
+          [ -n "$REPO_URL_BASE" ] || { echo "::error::variable IF_PPPOE_REPO_URL_BASE is not set"; exit 1; }
+          case "$REPO_URL_BASE" in
+            *\$\{ABI\}*) echo "::error::IF_PPPOE_REPO_URL_BASE must be the base only; CI appends /\${ABI}"; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: m
+        run: |
+          m=$(sh .github/scripts/matrix.sh abi supported,experimental)
+          jq -e '[.include[] | select(.status == "supported")] | length > 0' <<<"$m" >/dev/null \
+            || { echo "::error::no supported ABI in .github/versions.json"; exit 1; }
+          echo "matrix=$m" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: setup
+    uses: ./.github/workflows/build.yml
+    with:
+      matrix: ${{ needs.setup.outputs.matrix }}
+      kmod-version: ${{ needs.setup.outputs.version }}
+      plugin-revision: '0'
+      smoke-scope: untested
+      sign: true
+    secrets:
+      repo-signing-key: ${{ secrets.IF_PPPOE_REPO_SIGNING_KEY }}
+
+  publish:
+    needs: [setup, build]
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+    with:
+      tag: ${{ github.ref_name }}
+      matrix: ${{ needs.setup.outputs.matrix }}
+      notes: Code release ${{ github.ref_name }}.

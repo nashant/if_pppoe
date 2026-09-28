@@ -1,0 +1,6 @@
+<menu>
+    <Services>
+        <IfPppoe VisibleName="Kernel PPPoE" cssClass="fa fa-share-alt fa-fw" url="/ui/ifpppoe/settings">
+        </IfPppoe>
+    </Services>
+</menu>

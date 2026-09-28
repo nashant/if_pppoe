@@ -1,0 +1,10 @@
+<acl>
+    <page-services-ifpppoe>
+        <name>Services: Kernel PPPoE</name>
+        <description>Allow access to the Kernel PPPoE settings page</description>
+        <patterns>
+            <pattern>ui/ifpppoe/*</pattern>
+            <pattern>api/ifpppoe/*</pattern>
+        </patterns>
+    </page-services-ifpppoe>
+</acl>

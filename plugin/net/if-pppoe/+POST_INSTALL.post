@@ -1,0 +1,8 @@
+if [ -f /usr/local/etc/devd/if_pppoe.conf ]; then
+	/etc/rc.d/devd restart >/dev/null 2>&1 || true
+fi
+
+if [ -z "${PKG_UPGRADE:-}" ]; then
+	logger -t if_pppoe -p daemon.notice \
+	    "if-pppoe installed. Enable it under Services -> Kernel PPPoE, then reboot to apply."
+fi

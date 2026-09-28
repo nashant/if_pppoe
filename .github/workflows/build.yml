@@ -1,0 +1,342 @@
+# Reusable: kernel discovery -> FreeBSD-VM kmod build per ABI -> per-kernel
+# KVM smoke (smoke.yml) -> packages (+ signed repo) per ABI.
+# Called by ci.yml, nightly.yml and release.yml; see docs/CI.md.
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: 'JSON {"include":[ABI rows]} (from .github/scripts/matrix.sh abi)'
+        required: true
+        type: string
+      ref:
+        description: git ref to build (default the calling run's commit; nightly passes the release tag)
+        required: false
+        type: string
+        default: ''
+      kmod-version:
+        description: if-pppoe-kmod package version (0.4, or 0.4_N for a kernel-only refresh)
+        required: false
+        type: string
+        default: 0.0.0.ci
+      plugin-revision:
+        description: os-if-pppoe PLUGIN_REVISION (N of 0.4_N; empty = the _N of kmod-version, else 0)
+        required: false
+        type: string
+        default: ''
+      smoke:
+        description: run the per-kernel KVM boot smoke (smoke.yml); packages then hold only passing build_ids
+        required: false
+        type: boolean
+        default: true
+      smoke-scope:
+        description: latest-per-series | untested | all (see smoke-plan.sh)
+        required: false
+        type: string
+        default: latest-per-series
+      dial:
+        description: also attempt one PPPoE dial in the smoke guest (never fails the run)
+        required: false
+        type: boolean
+        default: true
+      sign:
+        description: build a signed pkg repo per ABI (release/refresh only)
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      repo-signing-key:
+        description: PEM RSA private key for pkg repo signing (only with sign=true)
+        required: false
+    outputs:
+      kmod-src-id:
+        description: compat.json cache key half (compat.sh kmod-src)
+        value: ${{ jobs.discover.outputs.kmod-src-id }}
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    name: discover kernels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      kmod-src-id: ${{ steps.src.outputs.id }}
+    env:
+      MATRIX: ${{ inputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - id: src
+        run: echo "id=$(sh .github/scripts/compat.sh kmod-src)" >> "$GITHUB_OUTPUT"
+
+      - id: key
+        name: Kernel set listing key
+        run: echo "key=$(sh .github/scripts/discover-kernels.sh listing-key)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore kernel set cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/kernel-sets
+          key: kernel-sets-v1-${{ steps.key.outputs.key }}
+          restore-keys: kernel-sets-v1-
+
+      # --union input: a set that left the mirror keeps its coverage.
+      - name: Previous release's kernels.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/prev"
+          gh release download --pattern kernels.json --dir "$RUNNER_TEMP/prev" 2>/dev/null \
+            || echo "no previous release kernels.json (first release, or none published)"
+
+      - name: Discover kernels
+        run: |
+          DISCOVER_SERIES=$(jq -r '[.include[].series] | join(" ")' <<<"$MATRIX") \
+          PREV_KERNELS_JSON="$RUNNER_TEMP/prev/kernels.json" \
+            sh .github/scripts/discover-kernels.sh run kernels
+          {
+            echo "### Discovered kernels"
+            echo '| ABI | series | version | build_id | config |'
+            echo '|---|---|---|---|---|'
+            jq -r '.[] | "| \(.abi) | \(.series) | \(.version) | `\(.build_id)` | `\(.config_hash[0:12])` |"' kernels/kernels.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kernels
+          path: kernels/
+          if-no-files-found: error
+          retention-days: ${{ inputs.sign && 90 || 14 }}
+
+  kmods:
+    name: kmods ${{ matrix.freebsd_abi }} (${{ matrix.series }})${{ matrix.status == 'experimental' && ' [experimental]' || '' }}
+    needs: discover
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    continue-on-error: ${{ matrix.status == 'experimental' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kernels
+          path: kernels
+
+      # One entry per kernel group's src tag; freebsd-build.sh prunes the
+      # tarballs this run did not use, so the entry stays bounded.
+      - name: Restore prepared kernel build dirs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ci-cache
+          key: kbuild-v2-${{ matrix.abi_slug }}-${{ matrix.kernconf }}-${{ hashFiles('kernels/kernels.json', 'plugin/build/lib/kbuild.sh') }}
+          restore-keys: kbuild-v2-${{ matrix.abi_slug }}-${{ matrix.kernconf }}-
+
+      - name: Build in FreeBSD ${{ matrix.freebsd_version }} VM
+        uses: vmactions/freebsd-vm@a2f9a41fa97f6848b8c3b791087dfcdaa5b473ff # v1.5.8
+        env:
+          FREEBSD_VERSION: ${{ matrix.freebsd_version }}
+          FREEBSD_ABI: ${{ matrix.freebsd_abi }}
+          OPNSENSE_SERIES: ${{ matrix.series }}
+          KERNCONF: ${{ matrix.kernconf }}
+          PHP_VERSION: ${{ matrix.php_version }}
+          PYTHON_VERSION: ${{ matrix.python_version }}
+          KERNELS_JSON: kernels/kernels.json
+          KMOD_VERSION: ${{ inputs.kmod-version }}
+          KMOD_SRC_ID: ${{ needs.discover.outputs.kmod-src-id }}
+        with:
+          release: ${{ matrix.freebsd_version }}
+          envs: >-
+            FREEBSD_VERSION FREEBSD_ABI OPNSENSE_SERIES KERNCONF PHP_VERSION
+            PYTHON_VERSION KERNELS_JSON KMOD_VERSION KMOD_SRC_ID
+          sync: rsync
+          copyback: true
+          prepare: |
+            pkg install -y git-lite jq
+          run: |
+            git config --global --add safe.directory "$PWD"
+            sh .github/scripts/freebsd-build.sh --phase kmods
+
+      - name: Summary
+        if: always()
+        env:
+          SLUG: ${{ matrix.abi_slug }}
+        run: |
+          f="out/$SLUG/build-info.json"
+          if [ -f "$f" ]; then
+            {
+              echo "### $SLUG kmods"
+              echo '| version | build_id | built with | ko sha256 |'
+              echo '|---|---|---|---|'
+              jq -r '.kernels[] | "| \(.version) | `\(.build_id)` | \(.built_from) | `\(.ko_sha256[0:12])` |"' "$f"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kmods-${{ matrix.abi_slug }}
+          path: out/${{ matrix.abi_slug }}/
+          if-no-files-found: error
+          retention-days: ${{ inputs.sign && 90 || 14 }}
+
+  smoke:
+    # !cancelled(): still smoke the ABIs that built when an experimental one failed.
+    if: ${{ !cancelled() && inputs.smoke }}
+    needs: [discover, kmods]
+    uses: ./.github/workflows/smoke.yml
+    with:
+      ref: ${{ inputs.ref }}
+      smoke-scope: ${{ inputs.smoke-scope }}
+      abis: ${{ join(fromJSON(inputs.matrix).include.*.freebsd_abi, ' ') }}
+      dial: ${{ inputs.dial }}
+
+  package:
+    name: package ${{ matrix.freebsd_abi }}${{ matrix.status == 'experimental' && ' [experimental]' || '' }}
+    if: ${{ !cancelled() }}
+    needs: [discover, kmods, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: ${{ matrix.status == 'experimental' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0 # plugins.mk derives the package hash/version from git
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kernels
+          path: kernels
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        id: kmods
+        continue-on-error: true # the (experimental) kmod build may have failed
+        with:
+          name: kmods-${{ matrix.abi_slug }}
+          path: out/${{ matrix.abi_slug }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        id: pass
+        if: steps.kmods.outcome == 'success' && inputs.smoke
+        continue-on-error: true
+        with:
+          name: pass-build-ids-${{ matrix.abi_slug }}
+          path: pass
+
+      # Without smoke every built .ko ships; with smoke only the passing
+      # ones, and a missing pass list is an error, never "ship everything".
+      - id: gate
+        env:
+          SLUG: ${{ matrix.abi_slug }}
+          KMODS: ${{ steps.kmods.outcome }}
+          PASS: ${{ steps.pass.outcome }}
+          SMOKE: ${{ inputs.smoke }}
+        run: |
+          if [ "$KMODS" != success ]; then
+            echo "::warning::no kmods-$SLUG artifact; package skipped"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          if [ "$SMOKE" = true ]; then
+            [ "$PASS" = success ] || { echo "::error::smoke produced no pass-build-ids-$SLUG"; exit 1; }
+            [ -f pass/pass-build-ids.txt ] || { echo "::error::pass-build-ids-$SLUG has no pass-build-ids.txt"; exit 1; }
+            cp pass/pass-build-ids.txt pass-build-ids.txt
+            echo "pass=pass-build-ids.txt" >> "$GITHUB_OUTPUT"
+          else
+            echo "pass=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A PEM does not survive the VM env forwarding, so it rides the rsync'd
+      # workspace; freebsd-build.sh deletes it and the step below scrubs it.
+      # Only this job ever sees the key (never discover/kmods/smoke).
+      - name: Stage signing key
+        if: steps.gate.outputs.run == 'true' && inputs.sign
+        env:
+          KEY: ${{ secrets.repo-signing-key }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::sign=true but no repo-signing-key secret"; exit 1; }
+          mkdir -p .ci-secrets
+          (umask 077 && printf '%s\n' "$KEY" > .ci-secrets/repo.key)
+
+      - name: Package in FreeBSD ${{ matrix.freebsd_version }} VM
+        if: steps.gate.outputs.run == 'true'
+        uses: vmactions/freebsd-vm@a2f9a41fa97f6848b8c3b791087dfcdaa5b473ff # v1.5.8
+        env:
+          FREEBSD_VERSION: ${{ matrix.freebsd_version }}
+          FREEBSD_ABI: ${{ matrix.freebsd_abi }}
+          OPNSENSE_SERIES: ${{ matrix.series }}
+          KERNCONF: ${{ matrix.kernconf }}
+          PHP_VERSION: ${{ matrix.php_version }}
+          PYTHON_VERSION: ${{ matrix.python_version }}
+          KERNELS_JSON: kernels/kernels.json
+          KMOD_VERSION: ${{ inputs.kmod-version }}
+          PLUGIN_REVISION: ${{ inputs.plugin-revision }}
+          PASS_BUILD_IDS: ${{ steps.gate.outputs.pass }}
+          IF_PPPOE_REPO_SIGNING_KEY_FILE: ${{ inputs.sign && '.ci-secrets/repo.key' || '' }}
+          IF_PPPOE_REPO_URL_BASE: ${{ inputs.sign && vars.IF_PPPOE_REPO_URL_BASE || '' }}
+        with:
+          release: ${{ matrix.freebsd_version }}
+          envs: >-
+            FREEBSD_VERSION FREEBSD_ABI OPNSENSE_SERIES KERNCONF PHP_VERSION
+            PYTHON_VERSION KERNELS_JSON KMOD_VERSION PLUGIN_REVISION PASS_BUILD_IDS
+            IF_PPPOE_REPO_SIGNING_KEY_FILE IF_PPPOE_REPO_URL_BASE
+          sync: rsync
+          copyback: true
+          prepare: |
+            pkg install -y git-lite jq
+          run: |
+            git config --global --add safe.directory "$PWD"
+            sh .github/scripts/freebsd-build.sh --phase package
+
+      - name: Scrub signing key
+        if: always() && inputs.sign
+        run: rm -rf .ci-secrets
+
+      - name: Summary
+        if: always() && steps.gate.outputs.run == 'true'
+        env:
+          SLUG: ${{ matrix.abi_slug }}
+        run: |
+          d="out/$SLUG"
+          [ -f "$d/build-info.json" ] || exit 0
+          {
+            echo "### $SLUG packages"
+            jq -r '.packages[]? | "- `\(.)`"' "$d/build-info.json"
+            echo
+            echo "Kernels covered: $(jq -r '[.packaged[]?.version] | join(", ")' "$d/build-info.json")"
+            if [ -s "$d/dropped-build-ids.txt" ]; then
+              echo
+              echo "**Dropped (smoke failed, boot hook falls back to mpd5):**"
+              while read -r bid ver; do printf -- '- %s (%s)\n' "$ver" "$bid"; done < "$d/dropped-build-ids.txt"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.gate.outputs.run == 'true'
+        with:
+          name: pkg-${{ matrix.abi_slug }}
+          path: |
+            out/${{ matrix.abi_slug }}/pkg/
+            out/${{ matrix.abi_slug }}/repo-*.tar.gz
+            out/${{ matrix.abi_slug }}/build-info.json
+            out/${{ matrix.abi_slug }}/kernels-shipped.json
+            out/${{ matrix.abi_slug }}/dropped-build-ids.txt
+          if-no-files-found: error
+          retention-days: ${{ inputs.sign && 90 || 14 }}

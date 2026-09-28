@@ -1,0 +1,45 @@
+last pid: 96218;  load averages:  0.07,  0.13,  0.14  up 100+00:42:50    06:43:51
+2 threads:     1 running, 1 sleeping
+CPU 0:  0.8% user,  0.0% nice,  1.7% system,  0.0% interrupt, 97.5% idle
+CPU 1:  0.8% user,  0.0% nice,  1.6% system,  0.0% interrupt, 97.6% idle
+CPU 2:  0.8% user,  0.0% nice,  1.6% system,  0.0% interrupt, 97.6% idle
+CPU 3:  0.8% user,  0.0% nice,  1.6% system,  0.0% interrupt, 97.6% idle
+Mem: 123M Active, 860M Inact, 3267M Wired, 56K Buf, 11G Free
+ARC: 2519M Total, 817M MFU, 1502M MRU, 581K Anon, 31M Header, 166M Other
+     2145M Compressed, 9339M Uncompressed, 4.35:1 Ratio
+Swap: 8192M Total, 8192M Free
+
+  PID USERNAME    PRI NICE   SIZE    RES STATE    C   TIME    WCPU COMMAND
+96218 labuser   88    0    15M  3216K CPU1     1   0:00   0.00% top
+95372 labuser   68    0    20M  8944K select   0   0:00   0.00% sshd-session
+
+last pid: 96218;  load averages:  0.07,  0.13,  0.14  up 100+00:42:52    06:43:53
+2 threads:     1 running, 1 sleeping
+CPU 0:  0.0% user,  0.0% nice,  2.0% system,  0.0% interrupt, 98.0% idle
+CPU 1:  0.4% user,  0.0% nice,  0.4% system,  0.0% interrupt, 99.2% idle
+CPU 2:  0.0% user,  0.0% nice,  1.6% system,  0.0% interrupt, 98.4% idle
+CPU 3:  0.0% user,  0.0% nice,  1.2% system,  0.0% interrupt, 98.8% idle
+Mem: 123M Active, 860M Inact, 3267M Wired, 56K Buf, 11G Free
+ARC: 2519M Total, 817M MFU, 1502M MRU, 581K Anon, 31M Header, 166M Other
+     2145M Compressed, 9339M Uncompressed, 4.35:1 Ratio
+Swap: 8192M Total, 8192M Free
+
+  PID USERNAME    PRI NICE   SIZE    RES STATE    C   TIME    WCPU COMMAND
+96218 labuser   32    0    15M  3356K CPU2     2   0:00   0.04% top
+95372 labuser   68    0    20M  8976K select   0   0:00   0.01% sshd-session
+
+last pid: 96218;  load averages:  0.07,  0.12,  0.14  up 100+00:42:54    06:43:55
+2 threads:     1 running, 1 sleeping
+CPU 0:  0.4% user,  0.0% nice,  1.6% system,  0.0% interrupt, 98.0% idle
+CPU 1:  0.0% user,  0.0% nice,  0.8% system,  0.0% interrupt, 99.2% idle
+CPU 2:  0.0% user,  0.0% nice,  2.7% system,  0.0% interrupt, 97.3% idle
+CPU 3:  0.0% user,  0.0% nice,  0.4% system,  0.0% interrupt, 99.6% idle
+Mem: 123M Active, 860M Inact, 3267M Wired, 56K Buf, 11G Free
+ARC: 2519M Total, 817M MFU, 1502M MRU, 581K Anon, 31M Header, 166M Other
+     2145M Compressed, 9339M Uncompressed, 4.35:1 Ratio
+Swap: 8192M Total, 8192M Free
+
+  PID USERNAME    PRI NICE   SIZE    RES STATE    C   TIME    WCPU COMMAND
+96218 labuser   26    0    15M  3356K CPU1     1   0:00   0.02% top
+95372 labuser   32    0    20M  8976K select   0   0:00   0.00% sshd-session
+

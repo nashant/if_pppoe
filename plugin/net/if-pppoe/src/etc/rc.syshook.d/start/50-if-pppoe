@@ -1,0 +1,6 @@
+#!/bin/sh
+# os-if-pppoe: rc.bootup returned, so this boot counts as clean.
+. "${IF_PPPOE_LIB:-/usr/local/opnsense/scripts/if_pppoe/lib.sh}"
+
+rm -f "${IF_PPPOE_CONF_DIR}/boot.pending"
+exit 0

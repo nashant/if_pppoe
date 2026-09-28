@@ -1,0 +1,58 @@
+last pid:  1986;  load averages:  1.31,  0.79,  0.37  up 0+00:09:01    10:23:03
+158 threads:   7 running, 108 sleeping, 43 waiting
+CPU 0:  0.0% user,  0.0% nice,  0.3% system, 56.3% interrupt, 43.4% idle
+CPU 1:  0.0% user,  0.0% nice,  0.2% system, 59.7% interrupt, 40.1% idle
+CPU 2:  0.0% user,  0.0% nice,  0.3% system, 60.1% interrupt, 39.6% idle
+CPU 3:  0.0% user,  0.0% nice,  0.3% system, 48.9% interrupt, 50.8% idle
+Mem: 12M Active, 2416K Inact, 127M Wired, 27M Buf, 1816M Free
+Swap: 1024M Total, 1024M Free
+
+  PID USERNAME    PRI NICE   SIZE    RES STATE    C   TIME    WCPU COMMAND
+   11 root        187 ki31     0B    64K RUN      3   8:12  67.55% idle{idle: cpu3}
+   11 root        187 ki31     0B    64K CPU1     1   7:52  62.89% idle{idle: cpu1}
+   11 root        187 ki31     0B    64K RUN      0   8:16  60.68% idle{idle: cpu0}
+   11 root        187 ki31     0B    64K RUN      2   8:09  60.40% idle{idle: cpu2}
+   12 root        -64    -     0B   640K WAIT     0   0:26  21.00% intr{irq28: virtio_pci1}
+   12 root        -60    -     0B   640K WAIT     1   0:10  19.89% intr{swi1: netisr 1}
+   12 root        -60    -     0B   640K CPU2     2   0:35  18.99% intr{swi1: netisr 2}
+   12 root        -60    -     0B   640K WAIT     3   0:04  17.35% intr{swi1: netisr 3}
+   12 root        -64    -     0B   640K WAIT     1   0:10  16.65% intr{irq30: virtio_pci1}
+   12 root        -64    -     0B   640K WAIT     0   0:10  15.90% intr{irq32: virtio_pci1}
+   12 root        -64    -     0B   640K WAIT     0   0:05  13.54% intr{irq34: virtio_pci1}
+   12 root        -60    -     0B   640K WAIT     0   0:04  11.40% intr{swi1: netisr 0}
+   12 root        -64    -     0B   640K WAIT     1   0:17   2.79% intr{irq41: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     1   0:08   2.71% intr{irq39: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     1   0:40   2.56% intr{irq37: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     3   0:42   2.31% intr{irq43: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     2   0:00   1.01% intr{irq40: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     2   0:00   0.82% intr{irq42: virtio_pci2}
+
+last pid:  1997;  load averages:  1.45,  0.82,  0.38  up 0+00:09:06    10:23:08
+170 threads:   7 running, 121 sleeping, 42 waiting
+CPU 0:  1.9% user,  0.0% nice,  7.1% system, 51.8% interrupt, 39.2% idle
+CPU 1:  1.1% user,  0.0% nice,  4.7% system, 49.8% interrupt, 44.4% idle
+CPU 2:  2.2% user,  0.0% nice,  6.6% system, 54.6% interrupt, 36.6% idle
+CPU 3:  1.7% user,  0.0% nice,  6.0% system, 48.4% interrupt, 44.0% idle
+Mem: 42M Active, 6444K Inact, 180M Wired, 34M Buf, 1729M Free
+Swap: 1024M Total, 1024M Free
+
+  PID USERNAME    PRI NICE   SIZE    RES STATE    C   TIME    WCPU COMMAND
+   11 root        187 ki31     0B    64K CPU3     3   8:15  54.63% idle{idle: cpu3}
+   11 root        187 ki31     0B    64K CPU1     1   7:54  51.40% idle{idle: cpu1}
+   11 root        187 ki31     0B    64K RUN      0   8:19  46.73% idle{idle: cpu0}
+   11 root        187 ki31     0B    64K RUN      2   8:12  45.58% idle{idle: cpu2}
+   12 root        -60    -     0B   640K WAIT     1   0:11  21.58% intr{swi1: netisr 1}
+   12 root        -60    -     0B   640K WAIT     2   0:36  21.07% intr{swi1: netisr 2}
+   12 root        -64    -     0B   640K CPU0     0   0:27  20.73% intr{irq28: virtio_pci1}
+   12 root        -60    -     0B   640K WAIT     3   0:05  17.74% intr{swi1: netisr 3}
+   12 root        -60    -     0B   640K WAIT     0   0:05  16.75% intr{swi1: netisr 0}
+   12 root        -64    -     0B   640K WAIT     2   0:11  16.63% intr{irq30: virtio_pci1}
+   12 root        -64    -     0B   640K WAIT     0   0:11  16.61% intr{irq32: virtio_pci1}
+   12 root        -64    -     0B   640K WAIT     2   0:06  15.20% intr{irq34: virtio_pci1}
+ 1993 root         64    0    84M    40M wait     3   0:01  10.37% lockstat
+   12 root        -64    -     0B   640K WAIT     3   0:08   3.88% intr{irq39: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     1   0:17   3.36% intr{irq41: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     2   0:41   3.26% intr{irq37: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     2   0:42   2.99% intr{irq43: virtio_pci2}
+   12 root        -64    -     0B   640K WAIT     0   0:01   1.17% intr{irq40: virtio_pci2}
+

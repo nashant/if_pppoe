@@ -1,0 +1,298 @@
+# Nightly, two jobs in one:
+# - Kernel refresh: when OPNsense has published a kernel whose build_id the
+#   latest release does not cover, rebuild that release's code (tag v<ver>)
+#   for every discovered kernel, smoke the new build_ids and publish
+#   v<ver>_<N> (pkg treats <ver>_<N> as an upgrade). No code change, so no
+#   review. See docs/CI.md#nightly-refresh.
+# - Otherwise: regression build of main against the NEWEST released tags of
+#   each series, so a new OPNsense release that breaks the module shows up
+#   before Renovate bumps the pins.
+name: nightly
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      statuses:
+        description: versions.json statuses to build
+        required: false
+        default: supported,experimental
+      refresh:
+        description: publish a kernel-only refresh when new build_ids exist
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      new-series: ${{ steps.m.outputs.new-series }}
+      drift: ${{ steps.m.outputs.drift }}
+      refresh: ${{ steps.diff.outputs.refresh }}
+      new-build-ids: ${{ steps.diff.outputs.new-build-ids }}
+      base-tag: ${{ steps.rel.outputs.base-tag }}
+      target: ${{ steps.rel.outputs.target }}
+      refresh-tag: ${{ steps.diff.outputs.refresh-tag }}
+      refresh-version: ${{ steps.diff.outputs.refresh-version }}
+      revision: ${{ steps.diff.outputs.revision }}
+      refresh-matrix: ${{ steps.diff.outputs.refresh-matrix }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: m
+        env:
+          STATUSES: ${{ inputs.statuses || 'supported,experimental' }}
+        run: |
+          sh .github/scripts/resolve-latest.sh "$RUNNER_TEMP/latest.json"
+          echo "matrix=$(VERSIONS_FILE="$RUNNER_TEMP/latest.json" sh .github/scripts/matrix.sh abi "$STATUSES")" >> "$GITHUB_OUTPUT"
+          echo "new-series=$(paste -sd' ' "$RUNNER_TEMP/new-series.txt")" >> "$GITHUB_OUTPUT"
+          drift=$(jq -r '[.entries[] | select(.opnsense_core_tag != .pinned_core_tag or .opnsense_src_tag != .pinned_src_tag)
+                  | "\(.opnsense_series): core \(.pinned_core_tag)->\(.opnsense_core_tag), src \(.pinned_src_tag)->\(.opnsense_src_tag)"] | join("; ")' \
+                  "$RUNNER_TEMP/latest.json")
+          echo "drift=$drift" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Resolved latest tags"
+            echo '```json'
+            jq '.entries | map({opnsense_series, status, opnsense_core_tag, opnsense_src_tag, pinned_core_tag, pinned_src_tag})' "$RUNNER_TEMP/latest.json"
+            echo '```'
+            [ -s "$RUNNER_TEMP/new-series.txt" ] && echo "New OPNsense series not in versions.json: $(paste -sd' ' "$RUNNER_TEMP/new-series.txt")"
+            [ -n "$drift" ] && echo "Pins behind latest (Renovate should propose): $drift"
+            true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The refresh baseline: the newest release, and the code release it
+      # belongs to (v<ver>; a refresh v<ver>_<N> targets v<ver>'s commit).
+      - name: Latest release
+        id: rel
+        run: |
+          set -euo pipefail
+          latest=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [ -z "$latest" ]; then
+            echo "::notice::no release yet; nothing to refresh"
+            exit 0
+          fi
+          ver=$(sh .github/scripts/refresh-plan.sh base-version "$latest")
+          base="v$ver"
+          target=$(gh api "repos/$GH_REPO/commits/$base" --jq .sha)
+          mkdir -p "$RUNNER_TEMP/prev"
+          if ! gh release download "$latest" --dir "$RUNNER_TEMP/prev" --pattern kernels.json; then
+            echo "::warning::$latest has no kernels.json asset; no refresh baseline"
+            exit 0
+          fi
+          {
+            echo "latest=$latest"
+            echo "version=$ver"
+            echo "base-tag=$base"
+            echo "target=$target"
+          } >> "$GITHUB_OUTPUT"
+
+      # Discovery runs from the release's own tree (its versions.json and
+      # discovery code), so the refresh rebuilds exactly what was released.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.rel.outputs.base-tag != ''
+        with:
+          ref: ${{ steps.rel.outputs.base-tag }}
+          path: rel-src
+          persist-credentials: false
+
+      # Same cache key and path as build.yml's discover job, so the sets
+      # downloaded here are reused by the refresh build (and vice versa).
+      - name: Kernel sets listing key
+        id: listing
+        if: steps.rel.outputs.base-tag != ''
+        run: echo "key=$(sh rel-src/.github/scripts/discover-kernels.sh listing-key)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.rel.outputs.base-tag != ''
+        with:
+          path: ${{ runner.temp }}/kernel-sets
+          key: kernel-sets-v1-${{ steps.listing.outputs.key }}
+          restore-keys: kernel-sets-v1-
+
+      - name: Discover kernels and diff against the release
+        id: diff
+        if: steps.rel.outputs.base-tag != ''
+        env:
+          LATEST: ${{ steps.rel.outputs.latest }}
+          VER: ${{ steps.rel.outputs.version }}
+          BASE: ${{ steps.rel.outputs.base-tag }}
+          WANT_REFRESH: ${{ github.event_name == 'schedule' || inputs.refresh }}
+          HAVE_KEY: ${{ secrets.IF_PPPOE_REPO_SIGNING_KEY != '' }}
+          REPO_URL_BASE: ${{ vars.IF_PPPOE_REPO_URL_BASE }}
+        run: |
+          set -euo pipefail
+          prev="$RUNNER_TEMP/prev/kernels.json"
+          cur="$RUNNER_TEMP/discover/kernels.json"
+          # --union keeps kernels the mirror has since dropped (never shrinks coverage).
+          KERNEL_SETS_CACHE="$RUNNER_TEMP/kernel-sets" PREV_KERNELS_JSON="$prev" \
+            sh rel-src/.github/scripts/discover-kernels.sh run "$RUNNER_TEMP/discover"
+          new=$(sh .github/scripts/refresh-plan.sh new-build-ids "$cur" "$prev" | paste -sd' ')
+          {
+            echo "### Kernel refresh check against $LATEST"
+            echo
+            if [ -n "$new" ]; then
+              echo "New build_ids:"
+              jq -r --arg n " $new " '.[] | select($n | contains(" \(.build_id) ")) | "- \(.version) (\(.abi)) `\(.build_id)`"' "$cur"
+            else
+              echo "No new OPNsense kernel since $LATEST."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$new" ] || [ "$WANT_REFRESH" != true ]; then
+            echo "refresh=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$HAVE_KEY" = true ] || { echo "::error::new kernels to cover but secret IF_PPPOE_REPO_SIGNING_KEY is not set"; exit 1; }
+          [ -n "$REPO_URL_BASE" ] || { echo "::error::new kernels to cover but variable IF_PPPOE_REPO_URL_BASE is not set"; exit 1; }
+          # N: 1 + the largest _N over git tags AND releases of v<ver>.
+          n=$({ gh api "repos/$GH_REPO/git/matching-refs/tags/v${VER}_" --jq '.[].ref | sub("^refs/tags/"; "")'
+                gh release list --limit 1000 --json tagName --jq '.[].tagName'; } \
+              | sh .github/scripts/refresh-plan.sh next-revision "$VER")
+          m=$(VERSIONS_FILE=rel-src/.github/versions.json sh .github/scripts/matrix.sh abi supported,experimental)
+          {
+            echo "refresh=true"
+            echo "new-build-ids=$new"
+            echo "revision=$n"
+            echo "refresh-version=${VER}_$n"
+            echo "refresh-tag=v${VER}_$n"
+            echo "refresh-matrix=$m"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing kernel-only refresh v${VER}_$n from $BASE." >> "$GITHUB_STEP_SUMMARY"
+
+  # No new kernel: regression build of main against the latest tags.
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.refresh != 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      matrix: ${{ needs.resolve.outputs.matrix }}
+      smoke-scope: latest-per-series
+
+  # New kernel(s): rebuild the latest code release for every kernel.
+  refresh-build:
+    needs: resolve
+    if: needs.resolve.outputs.refresh == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      matrix: ${{ needs.resolve.outputs.refresh-matrix }}
+      ref: ${{ needs.resolve.outputs.base-tag }}
+      kmod-version: ${{ needs.resolve.outputs.refresh-version }}
+      plugin-revision: ${{ needs.resolve.outputs.revision }}
+      smoke-scope: untested
+      sign: true
+    secrets:
+      repo-signing-key: ${{ secrets.IF_PPPOE_REPO_SIGNING_KEY }}
+
+  refresh-publish:
+    needs: [resolve, refresh-build]
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+    with:
+      tag: ${{ needs.resolve.outputs.refresh-tag }}
+      target: ${{ needs.resolve.outputs.target }}
+      matrix: ${{ needs.resolve.outputs.refresh-matrix }}
+      require-build-ids: ${{ needs.resolve.outputs.new-build-ids }}
+      notes: >-
+        Kernel-only refresh of ${{ needs.resolve.outputs.base-tag }} (same code, built from its commit):
+        adds if_pppoe.ko builds for newly published OPNsense kernels
+        (${{ needs.resolve.outputs.new-build-ids }}).
+        Packages are version ${{ needs.resolve.outputs.refresh-version }}, which pkg treats as an upgrade.
+
+  # Not when publish skipped the refresh (a newer code release is latest).
+  refresh-pages:
+    needs: [resolve, refresh-publish]
+    if: needs.refresh-publish.outputs.published == 'true'
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      tag: ${{ needs.resolve.outputs.refresh-tag }}
+
+  report:
+    needs: [resolve, build, refresh-build, refresh-publish, refresh-pages]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RESULTS: >-
+        resolve=${{ needs.resolve.result }} build=${{ needs.build.result }}
+        refresh-build=${{ needs.refresh-build.result }} refresh-publish=${{ needs.refresh-publish.result }}
+        refresh-pages=${{ needs.refresh-pages.result }}
+      REFRESH: ${{ needs.resolve.outputs.refresh }}
+      REFRESH_TAG: ${{ needs.resolve.outputs.refresh-tag }}
+      PUBLISHED: ${{ needs.refresh-publish.outputs.published }}
+      DROPPED_NEW: ${{ needs.refresh-publish.outputs.dropped-new }}
+      NEW_BUILD_IDS: ${{ needs.resolve.outputs.new-build-ids }}
+      NEW_SERIES: ${{ needs.resolve.outputs.new-series }}
+      DRIFT: ${{ needs.resolve.outputs.drift }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      LABEL: nightly-failure
+    steps:
+      - name: Open/update or close the nightly-failure issue
+        run: |
+          gh label create "$LABEL" --color B60205 --description "nightly.yml build or kernel refresh failed" 2>/dev/null || true
+          num=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')
+          case " $RESULTS " in
+            *=failure*|*=cancelled*) failed=1 ;;
+            *) failed=0 ;;
+          esac
+          # A refresh that published but dropped new kernels (failed smoke)
+          # is reported too: those kernels stay on mpd5 and are not retried
+          # until the module source changes.
+          if [ "$failed" = 0 ] && [ "$PUBLISHED" = true ] && [ -n "$DROPPED_NEW" ]; then
+            failed=1
+          fi
+          if [ "$failed" = 0 ]; then
+            [ -z "$num" ] || gh issue close "$num" --comment "Nightly green again: $RUN_URL"
+          else
+            if [ "$REFRESH" = true ] && [ "$PUBLISHED" = true ]; then
+              what="Kernel-only refresh $REFRESH_TAG published, but these new kernels failed the smoke test and were dropped"
+              what="$what (the boot hook uses mpd5 on them; compat.json records the failure, so later refreshes do not retry them):
+          $DROPPED_NEW"
+            elif [ "$REFRESH" = true ]; then
+              what="Kernel-only refresh $REFRESH_TAG failed; nothing was published. New build_ids: $NEW_BUILD_IDS."
+              what="$what Publishing is refused only when a new kernel of a supported ABI has no smoke result (infrastructure)"
+              what="$what or no new kernel was covered or smoked; the next night tries again."
+            else
+              what="Nightly build against the latest OPNsense tags failed. Experimental entries never fail the run, so this is a supported entry (or tag resolution itself)."
+            fi
+            body="$what
+
+          Jobs: $RESULTS
+          Run: $RUN_URL
+          Pins behind latest: ${DRIFT:-none}
+          New series not in .github/versions.json: ${NEW_SERIES:-none}"
+            if [ -n "$num" ]; then
+              gh issue comment "$num" --body "$body"
+            else
+              gh issue create --title "Nightly build or kernel refresh failing" --label "$LABEL" --body "$body"
+            fi
+          fi
+      - name: Nag about new OPNsense series
+        if: ${{ needs.resolve.outputs.new-series != '' }}
+        run: |
+          title="New OPNsense series available: $NEW_SERIES"
+          if [ -z "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')" ]; then
+            gh issue create --title "$title" --body "Released core series tags not yet in .github/versions.json: $NEW_SERIES. See docs/CI.md#adding-a-version. Run: $RUN_URL"
+          fi

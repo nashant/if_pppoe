@@ -1,0 +1,4 @@
+@IFCONFIG@
+@DEV@
+mtu
+1480

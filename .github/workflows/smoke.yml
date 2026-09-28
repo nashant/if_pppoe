@@ -1,0 +1,379 @@
+# Reusable: per-kernel KVM boot smoke of the multi-kernel kmods (called by
+# build.yml after its kmods job). One FreeBSD guest per shard of <=5
+# kernels; each kernel is booted once via nextboot and its .ko loaded.
+# Results are cached in compat.json keyed by (build_id, kmod_src), so a
+# kernel-only refresh smokes only new build_ids. See docs/CI.md "Smoke".
+#
+# Reads artifacts  <prefix>kernels         kernels.json (discover job)
+#                  <prefix>kmods-<slug>    ko/<bid>/if_pppoe.ko, bin/*
+# Writes artifacts <prefix>smoke-<slug>-<shard>  compat-part.json, logs
+#                  <prefix>compat          compat.json, dropped.txt, report.md,
+#                                          set-gone.txt
+#                  <prefix>pass-build-ids-<slug>  pass-build-ids.txt,
+#                                          failed-build-ids.txt
+# build.yml calls it with no prefix (each caller runs build.yml once, so
+# names are unique per run): kernels, kmods-<slug>, compat and
+# pass-build-ids-<slug>, the names build.yml's own jobs use.
+name: smoke
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: git ref to check out (kmod_src is computed from it); empty = the caller's
+        required: false
+        type: string
+        default: ''
+      smoke-scope:
+        description: latest-per-series (PR CI) | untested (release/nightly) | all
+        required: false
+        type: string
+        default: latest-per-series
+      abis:
+        description: space-separated FreeBSD ABIs to cover (empty = every ABI in kernels.json)
+        required: false
+        type: string
+        default: ''
+      compat-release:
+        description: release tag whose compat.json is the cache; empty = latest release; none = no cache
+        required: false
+        type: string
+        default: ''
+      dial:
+        description: also attempt one PPPoE dial on each shard's newest kernel (never fails the run)
+        required: false
+        type: boolean
+        default: true
+      require-features:
+        description: fail a kernel whose loaded .ko lacks a kern.features.if_pppoe_* the boot hook needs
+        required: false
+        type: boolean
+        default: true
+      max-parallel:
+        required: false
+        type: number
+        default: 4
+      artifact-prefix:
+        description: prepended verbatim to every artifact name read and written (include a separator)
+        required: false
+        type: string
+        default: ''
+    outputs:
+      compat-artifact:
+        description: name of the artifact holding the merged compat.json
+        value: ${{ inputs.artifact-prefix }}compat
+      dropped:
+        description: '"<abi> <build_id> <version> <reason>" lines: kernels kept out of the packages'
+        value: ${{ jobs.merge.outputs.dropped }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: smoke plan (${{ inputs.smoke-scope }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      abis: ${{ steps.plan.outputs.abis }}
+      count: ${{ steps.plan.outputs.count }}
+      kmod-src: ${{ steps.src.outputs.kmod-src }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact-prefix }}kernels
+          path: kernels
+
+      # A missing release or asset is an empty cache (everything untested),
+      # never an error: the first release has nothing to read.
+      - name: Previous compat.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ inputs.compat-release }}
+        run: |
+          mkdir -p plan/prev
+          if [ "$FROM" = none ]; then
+            echo "compat cache disabled"
+          elif gh release download ${FROM:+"$FROM"} --repo "$GITHUB_REPOSITORY" \
+              --pattern compat.json --dir plan/prev; then
+            echo "compat.json from ${FROM:-latest release}: $(jq '.results | length' plan/prev/compat.json) results"
+          else
+            echo "::notice::no compat.json in ${FROM:-the latest release}; nothing cached"
+            rm -f plan/prev/compat.json
+          fi
+
+      - name: kmod_src
+        id: src
+        run: |
+          k=$(sh .github/scripts/compat.sh kmod-src)
+          echo "kmod_src=$k"
+          echo "$k" > plan/kmod-src.txt
+          echo "kmod-src=$k" >> "$GITHUB_OUTPUT"
+
+      - name: Plan
+        id: plan
+        env:
+          KERNELS_JSON: kernels/kernels.json
+          COMPAT_JSON: plan/prev/compat.json
+          KMOD_SRC_ID: ${{ steps.src.outputs.kmod-src }}
+          SMOKE_SCOPE: ${{ inputs.smoke-scope }}
+          SMOKE_ABIS: ${{ inputs.abis }}
+          OUT_DIR: plan
+        run: |
+          sh .github/scripts/smoke-plan.sh
+          {
+            echo "### Smoke plan ($SMOKE_SCOPE)"
+            echo '| ABI | shard | kernels |'
+            echo '|---|---|---|'
+            jq -r '.include[] | "| \(.abi) | \(.shard) | \(.versions) |"' plan/matrix.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact-prefix }}smoke-plan
+          path: plan/
+          if-no-files-found: error
+          retention-days: 14
+
+  smoke:
+    name: smoke ${{ matrix.abi }} shard ${{ matrix.shard }} (${{ matrix.versions }})${{ matrix.status == 'experimental' && ' [experimental]' || '' }}
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    # ~1-2 min per reboot cycle (estimate) x <=5 kernels, plus image + first boot.
+    timeout-minutes: 60
+    continue-on-error: ${{ matrix.status == 'experimental' }}
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.max-parallel }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      FREEBSD_VERSION: ${{ matrix.freebsd_version }}
+      BUILD_IDS: ${{ matrix.build_ids }}
+      NEWEST: ${{ matrix.newest }}
+      KMOD_SRC_ID: ${{ needs.plan.outputs.kmod-src }}
+      KERNELS_JSON: ${{ github.workspace }}/kernels/kernels.json
+      ARTIFACT_DIR: ${{ github.workspace }}/kmods
+      IMAGE_CACHE: ${{ github.workspace }}/.ci-images
+      REQUIRE_FEATURES: ${{ inputs.require-features && '1' || '0' }}
+      SMOKE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact-prefix }}kernels
+          path: kernels
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        id: artifact
+        continue-on-error: true # the (experimental) kmods build may have failed
+        with:
+          name: ${{ inputs.artifact-prefix }}kmods-${{ matrix.slug }}
+          path: kmods
+
+      # No results are recorded then: a build failure is not a kernel
+      # failure and must not poison the compat cache.
+      - name: Skip (no kmods artifact)
+        if: steps.artifact.outcome != 'success'
+        env:
+          SLUG: ${{ matrix.slug }}
+        run: echo "::warning::no kmods artifact for $SLUG; smoke skipped"
+
+      - name: Enable KVM
+        if: steps.artifact.outcome == 'success'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils genisoimage
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.artifact.outcome == 'success'
+        with:
+          path: .ci-images
+          key: freebsd-image-${{ matrix.freebsd_version }}-basic-cloudinit-ufs-v1
+
+      - name: Boot FreeBSD ${{ matrix.freebsd_version }} and push sets + modules
+        id: up
+        if: steps.artifact.outcome == 'success'
+        run: bash .github/scripts/smoke-vm.sh up
+
+      - name: Per-kernel cycle (install, nextboot, kldload, clone, kldunload)
+        id: cycle
+        if: steps.up.outcome == 'success'
+        run: |
+          for bid in $BUILD_IDS; do
+            bash .github/scripts/smoke-vm.sh cycle "$bid"
+          done
+
+      - name: PPPoE dial against mpd5 on the newest kernel (best effort)
+        if: steps.cycle.outcome == 'success' && inputs.dial
+        continue-on-error: true
+        timeout-minutes: 10
+        run: bash .github/scripts/smoke-vm.sh dial "$NEWEST"
+
+      - name: Shut down guest
+        if: always() && steps.artifact.outcome == 'success'
+        run: bash .github/scripts/smoke-vm.sh down
+
+      - name: Report
+        if: always() && steps.artifact.outcome == 'success'
+        env:
+          ABI: ${{ matrix.abi }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          {
+            echo "### Smoke $ABI shard $SHARD"
+            echo '| version | build_id | result | detail |'
+            echo '|---|---|---|---|'
+            bash .github/scripts/smoke-vm.sh report
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.artifact.outcome == 'success'
+        with:
+          name: ${{ inputs.artifact-prefix }}smoke-${{ matrix.slug }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/if_pppoe-smoke/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  merge:
+    name: smoke results
+    needs: [plan, smoke]
+    # Also when smoke was skipped (everything cached) or a shard failed.
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      dropped: ${{ steps.merge.outputs.dropped }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact-prefix }}smoke-plan
+          path: plan
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact-prefix }}kernels
+          path: kernels
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.plan.outputs.count != '0'
+        continue-on-error: true # a shard that never booted uploads nothing
+        with:
+          pattern: ${{ inputs.artifact-prefix }}smoke-FreeBSD-*
+          path: parts
+
+      # Strict gates (the job fails, so nothing is packaged):
+      #  - a planned kernel of a supported ABI has no result (smoke infra:
+      #    boot, network, checksum; a shard that lost one kernel still
+      #    reports the others);
+      #  - a supported ABI ends up with no passing kernel;
+      #  - PR scope (latest-per-series): any supported kernel failed, since
+      #    that is the change under review breaking it.
+      # Otherwise a failed kernel is dropped from its package and reported.
+      # A planned kernel whose set the mirror no longer serves (404/410,
+      # smoke-vm.sh set-gone.txt; discovery's --union keeps such kernels) is
+      # dropped with reason set-gone and a warning, never an error: its .ko
+      # is untested for this kmod_src, and blocking on it would block every
+      # release for good.
+      - name: Merge compat.json, per-ABI pass lists
+        id: merge
+        env:
+          SCOPE: ${{ inputs.smoke-scope }}
+        run: |
+          set -eu
+          mkdir -p out
+          k=$(cat plan/kmod-src.txt)
+          find parts -name set-gone.txt -exec cat {} + 2>/dev/null | sort -u > out/set-gone.txt || true
+          # shellcheck disable=SC2046
+          sh .github/scripts/compat.sh merge out/compat.json plan/prev/compat.json \
+            $(find parts -name compat-part.json 2>/dev/null | sort)
+          : > out/dropped.txt
+          rc=0
+          {
+            echo "### Smoke results (scope $SCOPE, kmod_src ${k%"${k#????????????}"})"
+            echo '| ABI | status | shipped | dropped |'
+            echo '|---|---|---|---|'
+          } > out/report.md
+          while read -r abi slug status; do
+            mkdir -p "out/pass/$slug"
+            sh .github/scripts/compat.sh pass-list "$abi" kernels/kernels.json out/compat.json "$k" plan/planned.txt \
+              out/set-gone.txt > "out/pass/$slug/pass-build-ids.txt"
+            sh .github/scripts/compat.sh fail-list "$abi" kernels/kernels.json out/compat.json "$k" plan/planned.txt \
+              out/set-gone.txt > "out/pass/$slug/failed-build-ids.txt"
+            sed "s/^/$abi /" "out/pass/$slug/failed-build-ids.txt" >> out/dropped.txt
+            npass=$(grep -c . "out/pass/$slug/pass-build-ids.txt" || true)
+            nfail=$(grep -c . "out/pass/$slug/failed-build-ids.txt" || true)
+            echo "| $abi | $status | $npass | $nfail |" >> out/report.md
+            while read -r bid ver why; do
+              [ -n "$bid" ] || continue
+              lvl=warning
+              if [ "$status" = supported ] && [ "$why" != set-gone ]; then
+                if [ "$why" = no-result ] || [ "$SCOPE" = latest-per-series ]; then lvl=error; rc=1; fi
+              fi
+              echo "::$lvl::$abi kernel $ver ($bid) dropped: $why"
+            done < "out/pass/$slug/failed-build-ids.txt"
+            if [ "$status" = supported ] && [ "$npass" = 0 ]; then
+              echo "::error::$abi: no kernel passed; nothing to package"
+              rc=1
+            fi
+          done < <(jq -r '.include[] | "\(.abi) \(.slug) \(.status)"' plan/abis.json)
+          if [ -s out/dropped.txt ]; then
+            { echo; echo 'Dropped (the boot hook refuses these kernels and uses mpd5):'; echo '```'; cat out/dropped.txt; echo '```'; } >> out/report.md
+          fi
+          cat out/report.md >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo 'dropped<<EOF_DROPPED'
+            cat out/dropped.txt
+            echo 'EOF_DROPPED'
+          } >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.merge.outcome != 'skipped'
+        with:
+          name: ${{ inputs.artifact-prefix }}compat
+          path: out/
+          if-no-files-found: error
+          retention-days: 90
+
+  # One artifact per ABI, the shape the package job consumes
+  # (build-all.sh --pass-build-ids <dir>/pass-build-ids.txt).
+  # Explicit if: smoke (merge's other need) is skipped when everything is
+  # cached, and a skipped ancestor would otherwise skip this job too.
+  pass-lists:
+    name: pass list ${{ matrix.abi }}
+    needs: [plan, merge]
+    if: ${{ !cancelled() && needs.merge.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      matrix: ${{ fromJSON(needs.plan.outputs.abis) }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact-prefix }}compat
+          path: compat
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact-prefix }}pass-build-ids-${{ matrix.slug }}
+          path: compat/pass/${{ matrix.slug }}/
+          if-no-files-found: error
+          retention-days: 90

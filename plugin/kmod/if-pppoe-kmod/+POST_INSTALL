@@ -1,0 +1,7 @@
+#!/bin/sh
+# Deliberately does not kldload anything: the if-pppoe plugin's boot hook
+# decides whether/when to load, by exact build_id match (see pkg-descr).
+if [ -f /usr/local/share/if_pppoe/build_ids ]; then
+	logger -t if_pppoe -p daemon.notice \
+	    "if-pppoe-kmod installed, build_ids: $(tr '\n' ' ' < /usr/local/share/if_pppoe/build_ids)"
+fi

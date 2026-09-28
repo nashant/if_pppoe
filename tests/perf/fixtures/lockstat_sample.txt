@@ -1,0 +1,1284 @@
+
+Adaptive mutex spin: 22344 events in 8.083 seconds (2764 events/sec)
+
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+ 5572  30%  30% 0.00     4545 sppp                   sppp_input+0x4f0        
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              285       swi_net+0x128           
+       256 |@@@@@@@                        1376      ithread_loop+0x239      
+       512 |@@                             391       fork_exit+0x81          
+      1024 |@@                             433       0xffffffff810c972e      
+      2048 |@@@@                           765       
+      4096 |@@                             458       
+      8192 |@@@@@@@                        1421      
+     16384 |@                              305       
+     32768 |                               69        
+     65536 |                               42        
+    131072 |                               15        
+    262144 |                               8         
+    524288 |                               1         
+   1048576 |                               1         
+   2097152 |                               2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+ 3805  17%  47% 0.00     3805 vtnet2-tx0             vtnet_txq_tq_deferred+0x65
+
+      nsec ------ Time Distribution ------ count     Stack                   
+        64 |                               3         taskqueue_run_locked+0x182
+       128 |                               67        taskqueue_thread_loop+0xc2
+       256 |@@@@@@@                        908       fork_exit+0x81          
+       512 |@@@@@@@@@@                     1311      0xffffffff810c972e      
+      1024 |@@@@@@@                        890       
+      2048 |@@                             291       
+      4096 |                               48        
+      8192 |                               117       
+     16384 |                               75        
+     32768 |                               38        
+     65536 |                               38        
+    131072 |                               9         
+    262144 |                               5         
+    524288 |                               1         
+   1048576 |                               2         
+   2097152 |                               1         
+   4194304 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+ 2171  14%  60% 0.00     5394 sppp                   sppp_input+0x4f0        
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              106       netisr_dispatch_src+0x1fa
+       256 |@@@@@@@                        509       pppoe_pfil_in+0x2c9     
+       512 |@@                             152       pfil_mbuf_in+0x38       
+      1024 |@@                             190       ether_demux+0x46        
+      2048 |@@@                            286       ether_nh_input+0x36a    
+      4096 |@@                             211       netisr_dispatch_src+0x9f
+      8192 |@@@@@@@                        554       ether_input+0x56        
+     16384 |@                              101       vtnet_rxq_eof+0x750     
+     32768 |                               31        vtnet_rx_vq_process+0xbc
+     65536 |                               20        
+    131072 |                               3         
+    262144 |                               4         
+    524288 |                               1         
+   1048576 |                               2         
+   2097152 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  684  10%  71% 0.00    12921 sppp                   sppp_output+0x2d3       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              41        pppoe_output+0x7d       
+       256 |@@@@@@                         140       ip_tryforward+0x4c0     
+       512 |@@                             56        ip_input+0x569          
+      1024 |@@@                            76        netisr_dispatch_src+0x9f
+      2048 |@@@@                           107       ether_demux+0x149       
+      4096 |@@                             62        ether_nh_input+0x36a    
+      8192 |@@@@@@                         159       netisr_dispatch_src+0x9f
+     16384 |@                              28        ether_input+0x56        
+     32768 |                               6         vtnet_rxq_eof+0x750     
+     65536 |                               4         
+    131072 |                               1         
+    262144 |                               1         
+    524288 |                               0         
+   1048576 |                               0         
+   2097152 |                               2         
+   4194304 |                               0         
+   8388608 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+ 2906   7%  78% 0.00     2199 netisr_mtx             netisr_queue_internal+0x139
+
+      nsec ------ Time Distribution ------ count     Stack                   
+        64 |                               1         netisr_dispatch_src+0x3ab
+       128 |@                              144       pppoe_pfil_in+0x2c9     
+       256 |@@@@@@@@@@@@                   1173      pfil_mbuf_in+0x38       
+       512 |@                              148       ether_demux+0x46        
+      1024 |                               95        ether_nh_input+0x36a    
+      2048 |@@@@                           450       netisr_dispatch_src+0x9f
+      4096 |@@                             255       ether_input+0x56        
+      8192 |@@@@@                          548       vtnet_rxq_eof+0x750     
+     16384 |                               73        vtnet_rx_vq_process+0xbc
+     32768 |                               12        
+     65536 |                               6         
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+ 1467   4%  82% 0.00     2204 netisr_mtx             swi_net+0x1cc           
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |                               43        ithread_loop+0x239      
+       256 |@@@@@@@                        365       fork_exit+0x81          
+       512 |@@                             125       0xffffffff810c972e      
+      1024 |@@@                            177       
+      2048 |@@@@@                          277       
+      4096 |@@                             101       
+      8192 |@@@@@@@                        343       
+     16384 |                               27        
+     32768 |                               7         
+     65536 |                               2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+ 1009   3%  85% 0.00     2870 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              40        pf_test_state_tcp+0x1c0 
+       256 |@@@@@@                         224       pf_test+0x103b          
+       512 |@@@                            125       pf_check_in+0x27        
+      1024 |@@@                            121       pfil_mbuf_in+0x38       
+      2048 |@@@@                           158       ip_input+0x5cf          
+      4096 |@@@                            110       swi_net+0x128           
+      8192 |@@@@@                          190       ithread_loop+0x239      
+     16384 |                               29        fork_exit+0x81          
+     32768 |                               7         0xffffffff810c972e      
+     65536 |                               3         
+    131072 |                               0         
+    262144 |                               2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  905   3%  88% 0.00     2665 vtnet2-tx0             taskqueue_enqueue_flags+0xa5
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              42        vtnet_txq_mq_start+0xb1 
+       256 |@@@@@@@@@@@@                   373       ether_output_frame+0xd3 
+       512 |@@@                            102       ether_output+0x6b0      
+      1024 |@                              41        ip_output+0x1482        
+      2048 |@                              53        ip_forward+0x3a5        
+      4096 |@                              46        ip_input+0x790          
+      8192 |@@@@@                          174       swi_net+0x128           
+     16384 |@@                             64        ithread_loop+0x239      
+     32768 |                               8         fork_exit+0x81          
+     65536 |                               2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+ 1033   3%  91% 0.00     2332 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+        64 |                               1         pf_test_state_tcp+0x1c0 
+       128 |@                              40        pf_test+0x103b          
+       256 |@@@@@@@@                       303       pf_check_out+0x22       
+       512 |@@@@                           141       pfil_mbuf_fwd+0x38      
+      1024 |@@@                            106       ip_tryforward+0x241     
+      2048 |@@@@                           143       ip_input+0x569          
+      4096 |@@                             71        netisr_dispatch_src+0x9f
+      8192 |@@@@@                          194       ether_demux+0x149       
+     16384 |                               26        ether_nh_input+0x36a    
+     32768 |                               4         
+     65536 |                               3         
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  591   3%  94% 0.00     3962 vtnet2-tx0             taskqueue_run_locked+0x1ef
+
+      nsec ------ Time Distribution ------ count     Stack                   
+        64 |                               2         taskqueue_thread_loop+0xc2
+       128 |@@@@                           89        fork_exit+0x81          
+       256 |@@@@@                          117       0xffffffff810c972e      
+       512 |@                              22        
+      1024 |                               14        
+      2048 |@@                             58        
+      4096 |@@                             44        
+      8192 |@@@@@@@@@                      193       
+     16384 |@@                             42        
+     32768 |                               6         
+     65536 |                               3         
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  399   2%  96% 0.00     3796 vtnet2-tx0             taskqueue_enqueue_flags+0xa5
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              18        vtnet_txq_mq_start+0xb1 
+       256 |@@@@@@@@@@@@                   171       ether_output_frame+0xd3 
+       512 |@@@@                           55        ether_output+0x6b0      
+      1024 |@                              20        ip_output+0x1482        
+      2048 |@                              23        ip_forward+0x3a5        
+      4096 |@                              18        ip_input+0x790          
+      8192 |@@@@                           65        netisr_dispatch_src+0x1fa
+     16384 |@                              18        pppoe_pfil_in+0x2c9     
+     32768 |                               8         pfil_mbuf_in+0x38       
+     65536 |                               1         
+    131072 |                               0         
+    262144 |                               1         
+    524288 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  458   2%  97% 0.00     3169 pf_keyhash             pf_find_state+0x1b1     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+        64 |                               1         pf_test_state_tcp+0x1c0 
+       128 |@                              27        pf_test+0x103b          
+       256 |@@@@@@@@                       134       pf_check_out+0x22       
+       512 |@@                             40        pfil_mbuf_fwd+0x38      
+      1024 |@                              30        ip_output+0xc8c         
+      2048 |@@@                            55        ip_forward+0x3a5        
+      4096 |@@                             41        ip_input+0x790          
+      8192 |@@@@@@@                        112       swi_net+0x128           
+     16384 |                               14        ithread_loop+0x239      
+     32768 |                               2         
+     65536 |                               1         
+    131072 |                               0         
+    262144 |                               0         
+    524288 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  376   1%  99% 0.00     2866 pf_keyhash             pf_find_state+0x1b1     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              24        pf_test_state_tcp+0x1c0 
+       256 |@@@@@                          67        pf_test+0x103b          
+       512 |@@                             37        pf_check_in+0x27        
+      1024 |@@                             37        pfil_mbuf_in+0x38       
+      2048 |@@@@@@                         76        ip_tryforward+0x17f     
+      4096 |@                              25        ip_input+0x569          
+      8192 |@@@@@@@                        96        netisr_dispatch_src+0x9f
+     16384 |                               10        ether_demux+0x149       
+     32768 |                               2         ether_nh_input+0x36a    
+     65536 |                               1         
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  357   0%  99% 0.00      894 netisr_mtx             swi_net+0x20a           
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              22        ithread_loop+0x239      
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@      307       fork_exit+0x81          
+       512 |@                              17        0xffffffff810c972e      
+      1024 |                               0         
+      2048 |                               2         
+      4096 |                               2         
+      8192 |                               5         
+     16384 |                               0         
+     32768 |                               1         
+     65536 |                               0         
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   94   0%  99% 0.00     3206 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@@@@@@@@                       27        pf_test_state_tcp+0x1c0 
+       256 |@@@@@@@@@@@@@@@@@              56        pf_test+0x103b          
+       512 |@                              5         pf_check_in+0x27        
+      1024 |                               2         pfil_mbuf_in+0x38       
+      2048 |                               0         ip_tryforward+0x17f     
+      4096 |                               1         ip_input+0x569          
+      8192 |                               1         netisr_dispatch_src+0x9f
+     16384 |                               1         ether_demux+0x149       
+     32768 |                               0         ether_nh_input+0x36a    
+     65536 |                               0         
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  130   0% 100% 0.00     2055 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              5         pf_test_state_tcp+0x1c0 
+       256 |@@@@@@@@@                      43        pf_test+0x103b          
+       512 |@@@                            13        pf_check_in+0x27        
+      1024 |@                              5         pfil_mbuf_in+0x38       
+      2048 |@@@@                           19        ip_input+0x5cf          
+      4096 |@@@                            15        netisr_dispatch_src+0x1fa
+      8192 |@@@@@@                         27        pppoe_pfil_in+0x2c9     
+     16384 |                               3         pfil_mbuf_in+0x38       
+                                                     ether_demux+0x46        
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   53   0% 100% 0.00     2260 vtnet2-tx0             _sleep+0x235            
+
+      nsec ------ Time Distribution ------ count     Stack                   
+        64 |                               1         taskqueue_thread_loop+0xb1
+       128 |@                              3         fork_exit+0x81          
+       256 |@@@@@@@@@@@@@@@                27        0xffffffff810c972e      
+       512 |@@                             4         
+      1024 |@                              2         
+      2048 |                               1         
+      4096 |                               1         
+      8192 |@@@@@@                         11        
+     16384 |@                              2         
+     32768 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  247   0% 100% 0.00      345 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@@@                            32        pf_test_state_tcp+0x1c0 
+       256 |@@@@@@@@@@@@@                  108       pf_test+0x103b          
+       512 |@@@@@@@                        62        pf_check_out+0x22       
+      1024 |@@@@                           37        pfil_mbuf_fwd+0x38      
+      2048 |                               7         ip_output+0xc8c         
+      4096 |                               1         ip_forward+0x3a5        
+                                                     ip_input+0x790          
+                                                     swi_net+0x128           
+                                                     ithread_loop+0x239      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   50   0% 100% 0.00     1587 pf_keyhash             pf_find_state+0x1b1     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@@@                            6         pf_test_state_tcp+0x1c0 
+       256 |@@@@@@@@@                      16        pf_test+0x103b          
+       512 |@@                             4         pf_check_out+0x22       
+      1024 |@@@                            5         pfil_mbuf_fwd+0x38      
+      2048 |@@@@                           7         ip_output+0xc8c         
+      4096 |@                              3         ip_forward+0x3a5        
+      8192 |@@@@@                          9         ip_input+0x790          
+                                                     netisr_dispatch_src+0x1fa
+                                                     pppoe_pfil_in+0x2c9     
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   35   0% 100% 0.00      783 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@@@@@@                         7         pf_test_state_tcp+0x1c0 
+       256 |@@@@@@@@@@@@                   15        pf_test+0x103b          
+       512 |@@@@@@                         8         pf_check_out+0x22       
+      1024 |@@@                            4         pfil_mbuf_fwd+0x38      
+      2048 |                               0         ip_output+0xc8c         
+      4096 |                               0         ip_forward+0x3a5        
+      8192 |                               0         ip_input+0x790          
+     16384 |                               0         netisr_dispatch_src+0x1fa
+     32768 |                               1         pppoe_pfil_in+0x2c9     
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00    12335 ATA state lock         ata_interrupt+0xdd      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     16384 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 2         ithread_loop+0x239      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+
+Adaptive mutex block: 32 events in 8.083 seconds (4 events/sec)
+
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   24  92%  92% 0.00    44541 vtnet2-tx0             vtnet_txq_tq_deferred+0x65
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@                             2         taskqueue_run_locked+0x182
+      8192 |@@@@@                          4         taskqueue_thread_loop+0xc2
+     16384 |@@@@@@@@@@                     8         fork_exit+0x81          
+     32768 |@@                             2         0xffffffff810c972e      
+     65536 |@@@                            3         
+    131072 |@@                             2         
+    262144 |@@@                            3         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   4%  96% 0.00    42284 sppp                   sppp_output+0x2d3       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     65536 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         pppoe_output+0x7d       
+                                                     ip_tryforward+0x4c0     
+                                                     ip_input+0x569          
+                                                     netisr_dispatch_src+0x9f
+                                                     ether_demux+0x149       
+                                                     ether_nh_input+0x36a    
+                                                     netisr_dispatch_src+0x9f
+                                                     ether_input+0x56        
+                                                     vtnet_rxq_eof+0x750     
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    5   2%  97% 0.00     4026 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@@@@@@@@@@@@@@@@@@@@@@@       4         pf_test_state_tcp+0x1c0 
+      8192 |@@@@@@                         1         pf_test+0x103b          
+                                                     pf_check_out+0x22       
+                                                     pfil_mbuf_fwd+0x38      
+                                                     ip_tryforward+0x241     
+                                                     ip_input+0x569          
+                                                     netisr_dispatch_src+0x9f
+                                                     ether_demux+0x149       
+                                                     ether_nh_input+0x36a    
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   1%  99% 0.00    14911 pf_idhash              pf_find_state+0x1c9     
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     16384 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         pf_test_state_tcp+0x1c0 
+                                                     pf_test+0x103b          
+                                                     pf_check_in+0x27        
+                                                     pfil_mbuf_in+0x38       
+                                                     ip_tryforward+0x17f     
+                                                     ip_input+0x569          
+                                                     netisr_dispatch_src+0x9f
+                                                     ether_demux+0x149       
+                                                     ether_nh_input+0x36a    
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   1% 100% 0.00    14346 vtnet2-tx0             taskqueue_enqueue_flags+0xa5
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     16384 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         vtnet_txq_mq_start+0xb1 
+                                                     ether_output_frame+0xd3 
+                                                     ether_output+0x6b0      
+                                                     ip_output+0x1482        
+                                                     ip_forward+0x3a5        
+                                                     ip_input+0x790          
+                                                     swi_net+0x128           
+                                                     ithread_loop+0x239      
+                                                     fork_exit+0x81          
+-------------------------------------------------------------------------------
+
+Spin lock spin: 292 events in 8.083 seconds (36 events/sec)
+
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    5  30%  30% 0.00    56532 sched lock 2           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@                         1         intr_event_schedule_thread+0xf8
+       512 |                               0         intr_event_handle+0x28b 
+      1024 |                               0         intr_execute_handlers+0x49
+      2048 |@@@@@@                         1         0xffffffff810c9a0c      
+      4096 |@@@@@@                         1         acpi_cpu_idle+0x2cd     
+      8192 |@@@@@@                         1         cpu_idle_acpi+0x46      
+     16384 |                               0         cpu_idle+0x9d           
+     32768 |                               0         sched_idletd+0x6c6      
+     65536 |                               0         fork_exit+0x81          
+    131072 |                               0         
+    262144 |                               0         
+    524288 |@@@@@@                         1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  158  24%  54% 0.00     1434 sleepq chain           wakeup_any+0xe          
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |                               2         taskqueue_enqueue_locked+0x1bf
+       256 |@@@@@@@@@@@@@@@@               89        vtnet_txq_mq_start+0xb1 
+       512 |@@@@@@@@                       47        ether_output_frame+0xd3 
+      1024 |@@                             11        ether_output+0x6b0      
+      2048 |                               3         ip_output+0x1482        
+      4096 |                               1         ip_forward+0x3a5        
+      8192 |                               4         ip_input+0x790          
+     16384 |                               0         swi_net+0x128           
+     32768 |                               0         ithread_loop+0x239      
+     65536 |                               0         
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1  24%  78% 0.00   223962 smp rendezvous         smp_rendezvous_cpus+0x1e6
+
+      nsec ------ Time Distribution ------ count     Stack                   
+    262144 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         dtrace_xcall+0xed       
+                                                     dtrace_ioctl+0x168e     
+                                                     devfs_ioctl+0xcb        
+                                                     VOP_IOCTL_APV+0x37      
+                                                     vn_ioctl+0x1c8          
+                                                     devfs_ioctl_f+0x1e      
+                                                     kern_ioctl+0x255        
+                                                     sys_ioctl+0x101         
+                                                     amd64_syscall+0x117     
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   81   5%  83% 0.00      594 sleepq chain           wakeup_any+0xe          
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |@                              3         taskqueue_enqueue_locked+0x1bf
+       256 |@@@@@@@@@@@@@@                 38        vtnet_txq_mq_start+0xb1 
+       512 |@@@@@@@@@@                     27        ether_output_frame+0xd3 
+      1024 |@@@                            9         ether_output+0x6b0      
+      2048 |                               1         ip_output+0x1482        
+      4096 |                               1         ip_forward+0x3a5        
+      8192 |                               1         ip_input+0x790          
+     16384 |                               1         netisr_dispatch_src+0x1fa
+                                                     pppoe_pfil_in+0x2c9     
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   16   5%  87% 0.00     2758 sched lock 3           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@                      5         setrunnable+0x2a        
+       512 |@                              1         wakeup_any+0x1f         
+      1024 |@                              1         taskqueue_enqueue_locked+0x1bf
+      2048 |@@@                            2         vtnet_txq_mq_start+0xb1 
+      4096 |@                              1         ether_output_frame+0xd3 
+      8192 |@@@@@@@@@@@                    6         ether_output+0x6b0      
+                                                     ip_output+0x1482        
+                                                     ip_forward+0x3a5        
+                                                     ip_input+0x790          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   3%  90% 0.00    26712 turnstile chain        __mtx_unlock_sleep+0x5a 
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     32768 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         sppp_input+0x508        
+                                                     swi_net+0x128           
+                                                     ithread_loop+0x239      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    4   2%  92% 0.00     4624 sched lock 2           sched_switch+0xc5e      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@                        1         mi_switch+0xbd          
+      1024 |                               0         ithread_loop+0x87       
+      2048 |                               0         fork_exit+0x81          
+      4096 |                               0         0xffffffff810c972e      
+      8192 |@@@@@@@@@@@@@@@                2         
+     16384 |@@@@@@@                        1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    3   1%  94% 0.00     4723 sched lock 1           sched_switch+0xc5e      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 3         mi_switch+0xbd          
+                                                     ithread_loop+0x87       
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   1%  95% 0.00     5221 sched lock 2           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@                1         setrunnable+0x2a        
+       512 |                               0         wakeup_any+0x1f         
+      1024 |                               0         taskqueue_enqueue_locked+0x1bf
+      2048 |                               0         vtnet_txq_mq_start+0xb1 
+      4096 |                               0         ether_output_frame+0xd3 
+      8192 |                               0         ether_output+0x6b0      
+     16384 |@@@@@@@@@@@@@@@                1         ip_output+0x1482        
+                                                     ip_forward+0x3a5        
+                                                     ip_input+0x790          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   1%  96% 0.00     9079 callout                softclock_call_cc+0x3bd 
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     16384 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         softclock_thread+0xe5   
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   1%  96% 0.00     6882 turnstile chain        turnstile_trywait+0xb8  
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         __mtx_lock_sleep+0x119  
+                                                     sppp_input+0x4f0        
+                                                     netisr_dispatch_src+0x1fa
+                                                     pppoe_pfil_in+0x2c9     
+                                                     pfil_mbuf_in+0x38       
+                                                     ether_demux+0x46        
+                                                     ether_nh_input+0x36a    
+                                                     netisr_dispatch_src+0x9f
+                                                     ether_input+0x56        
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   1%  97% 0.00     2748 callout                callout_lock+0xac       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@                1         callout_reset_sbt_on+0x48
+       512 |                               0         dtrace_state_clean+0x131
+      1024 |                               0         softclock_call_cc+0x129 
+      2048 |                               0         softclock_thread+0xe5   
+      4096 |                               0         fork_exit+0x81          
+      8192 |@@@@@@@@@@@@@@@                1         0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   1%  97% 0.00     5249 sched lock 2           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_schedule_thread+0xf8
+                                                     intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     ata_begin_transaction+0x222
+                                                     ata_cam_end_transaction+0x349
+                                                     ata_interrupt+0x95      
+                                                     ithread_loop+0x239      
+                                                     fork_exit+0x81          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   1%  98% 0.00     5190 sched lock 3           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_schedule_thread+0xf8
+                                                     intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   1%  99% 0.00     4921 sched lock 1           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         setrunnable+0x2a        
+                                                     wakeup_any+0x1f         
+                                                     taskqueue_enqueue_locked+0x1bf
+                                                     vtnet_txq_mq_start+0xb1 
+                                                     ether_output_frame+0xd3 
+                                                     ether_output+0x6b0      
+                                                     ip_output+0x1482        
+                                                     ip_forward+0x3a5        
+                                                     ip_input+0x790          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0%  99% 0.00     4693 sched lock 2           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_schedule_thread+0xf8
+                                                     intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     cpu_activeclock+0x75    
+                                                     cpu_idle+0xa6           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0%  99% 0.00     3079 sched lock 1           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         callout_process+0x2b6   
+                                                     handleevents+0x186      
+                                                     timercb+0x250           
+                                                     lapic_handle_timer+0xab 
+                                                     0xffffffff810ca3f1      
+                                                     setrunnable+0x2a        
+                                                     wakeup_any+0x1f         
+                                                     taskqueue_enqueue_locked+0x1bf
+                                                     vtnet_txq_mq_start+0xb1 
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00      888 et_hw_mtx              cpu_new_callout+0x2a6   
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@                1         callout_reset_sbt_on+0x162
+      1024 |                               0         dtrace_state_clean+0x131
+      2048 |@@@@@@@@@@@@@@@                1         softclock_call_cc+0x129 
+                                                     softclock_thread+0xe5   
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     1299 callout                callout_lock+0xac       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      2048 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         callout_reset_sbt_on+0x48
+                                                     sleepq_set_timeout_sbt+0xc8
+                                                     _sleep+0x177            
+                                                     pf_purge_thread+0xb6    
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      967 callout                callout_lock+0xac       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      1024 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         callout_reset_sbt_on+0x48
+                                                     sleepq_set_timeout_sbt+0xc8
+                                                     _sleep+0x177            
+                                                     buf_daemon+0x181        
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00      261 sched lock 1           sched_idletd+0x45e      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@                1         fork_exit+0x81          
+       512 |@@@@@@@@@@@@@@@                1         0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      342 sched lock 1           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_schedule_thread+0xf8
+                                                     intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      227 callout                callout_lock+0xac       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         callout_reset_sbt_on+0x48
+                                                     sleepq_set_timeout_sbt+0xc8
+                                                     _sleep+0x177            
+                                                     vnlru_proc+0x293        
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      201 sched lock 0           sched_add+0x284         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         setrunnable+0x2a        
+                                                     wakeup_any+0x1f         
+                                                     taskqueue_enqueue_locked+0x1bf
+                                                     vtnet_txq_mq_start+0xb1 
+                                                     ether_output_frame+0xd3 
+                                                     ether_output+0x6b0      
+                                                     ip_output+0x1482        
+                                                     ip_forward+0x3a5        
+                                                     ip_input+0x790          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      200 sched lock 2           sched_switch+0xc99      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         mi_switch+0xbd          
+                                                     _sleep+0x1f3            
+                                                     taskqueue_thread_loop+0xb1
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      185 callout                softclock_thread+0x51   
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      129 callout                callout_lock+0xac       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         callout_reset_sbt_on+0x48
+                                                     sleepq_set_timeout_sbt+0xc8
+                                                     _sleep+0x177            
+                                                     bufspace_daemon+0x3fd   
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+
+Thread lock spin: 1134 events in 8.083 seconds (140 events/sec)
+
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   50  39%  39% 0.00   242455 sched lock 2           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@                              2         ipi_bitmap_handler+0x86 
+       512 |@                              2         0xffffffff810caa33      
+      1024 |@                              2         acpi_cpu_idle+0x2cd     
+      2048 |@                              2         cpu_idle_acpi+0x46      
+      4096 |                               0         cpu_idle+0x9d           
+      8192 |@@@@                           7         sched_idletd+0x6c6      
+     16384 |@                              2         fork_exit+0x81          
+     32768 |@                              2         0xffffffff810c972e      
+     65536 |@@@@                           7         
+    131072 |@@@@                           8         
+    262144 |@@@@                           8         
+    524288 |@                              3         
+   1048576 |@                              2         
+   2097152 |                               1         
+   4194304 |@                              2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   34  18%  57% 0.00   159861 sched lock 1           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@                              2         ipi_bitmap_handler+0x86 
+      1024 |@@                             3         0xffffffff810caa33      
+      2048 |                               0         acpi_cpu_idle+0x2cd     
+      4096 |                               0         cpu_idle_acpi+0x46      
+      8192 |@@@                            4         cpu_idle+0x9d           
+     16384 |@@@                            4         sched_idletd+0x6c6      
+     32768 |@@                             3         fork_exit+0x81          
+     65536 |@@@                            4         0xffffffff810c972e      
+    131072 |@                              2         
+    262144 |@@                             3         
+    524288 |@@@@@@                         7         
+   1048576 |@                              2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  232  17%  74% 0.00    22756 sched lock 2           sched_idletd+0x58       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |                               1         fork_exit+0x81          
+       256 |@                              15        0xffffffff810c972e      
+       512 |                               1         
+      1024 |                               0         
+      2048 |                               1         
+      4096 |                               0         
+      8192 |                               3         
+     16384 |@@@@@@@@@@                     84        
+     32768 |@@@@@@@@@@                     84        
+     65536 |@@@@                           34        
+    131072 |@                              8         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   27  17%  91% 0.00   193568 sched lock 3           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      1024 |@                              1         ipi_bitmap_handler+0x86 
+      2048 |@                              1         0xffffffff810caa33      
+      4096 |                               0         acpi_cpu_idle+0x2cd     
+      8192 |@@@@@                          5         cpu_idle_acpi+0x46      
+     16384 |@@                             2         cpu_idle+0x9d           
+     32768 |@@                             2         sched_idletd+0x6c6      
+     65536 |@@@@@                          5         fork_exit+0x81          
+    131072 |@@@                            3         0xffffffff810c972e      
+    262144 |@@@                            3         
+    524288 |@@                             2         
+   1048576 |@@                             2         
+   2097152 |@                              1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+  483   3%  94% 0.00     1873 sched lock 2           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@                        113       swi_sched+0x76          
+       512 |@@@@@@@@@@                     161       netisr_queue_internal+0x108
+      1024 |@@@@@                          87        netisr_dispatch_src+0x3ab
+      2048 |@@                             34        pppoe_pfil_in+0x2c9     
+      4096 |@                              27        pfil_mbuf_in+0x38       
+      8192 |@@                             45        ether_demux+0x46        
+     16384 |                               15        ether_nh_input+0x36a    
+     32768 |                               0         netisr_dispatch_src+0x9f
+     65536 |                               0         ether_input+0x56        
+    131072 |                               0         
+    262144 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   45   2%  96% 0.00    12966 sched lock 3           sched_idletd+0x58       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@                             3         fork_exit+0x81          
+       512 |                               0         0xffffffff810c972e      
+      1024 |                               0         
+      2048 |                               0         
+      4096 |                               0         
+      8192 |@@@@@@@@@@                     15        
+     16384 |@@@@@@@@@@                     16        
+     32768 |@@@@@@                         9         
+     65536 |@                              2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   20   1%  97% 0.00    18536 sched lock 0           sched_idletd+0x58       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@                   8         fork_exit+0x81          
+       512 |@@@                            2         0xffffffff810c972e      
+      1024 |                               0         
+      2048 |                               0         
+      4096 |                               0         
+      8192 |@                              1         
+     16384 |@@@                            2         
+     32768 |@@@@@@                         4         
+     65536 |@                              1         
+    131072 |@@@                            2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   66   1%  98% 0.00     4176 sched lock 2           ithread_loop+0xe9       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@                             5         fork_exit+0x81          
+       512 |@@@@@@                         15        0xffffffff810c972e      
+      1024 |@@                             6         
+      2048 |@@@@@                          13        
+      4096 |@@                             6         
+      8192 |@@@@@@@                        16        
+     16384 |@                              4         
+     32768 |                               0         
+     65536 |                               0         
+    131072 |                               1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    4   1%  99% 0.00    59239 sched lock 0           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     32768 |@@@@@@@                        1         ipi_bitmap_handler+0x86 
+     65536 |@@@@@@@@@@@@@@@                2         0xffffffff810caa33      
+    131072 |@@@@@@@                        1         acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   24   0%  99% 0.00     3043 sched lock 0           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@                              1         intr_event_handle+0x28b 
+       512 |@@@                            3         intr_execute_handlers+0x49
+      1024 |                               0         0xffffffff810c9a0c      
+      2048 |                               0         acpi_cpu_idle+0x2cd     
+      4096 |@@@@@@@@@@@@@@@@@@@@           16        cpu_idle_acpi+0x46      
+      8192 |@@@@@                          4         cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   80   0%  99% 0.00      689 sched lock 1           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       128 |                               1         swi_sched+0x76          
+       256 |@@@@@@@                        19        netisr_queue_internal+0x108
+       512 |@@@@@@@@@@                     29        netisr_dispatch_src+0x3ab
+      1024 |@@@@@@@@                       23        pppoe_pfil_in+0x2c9     
+      2048 |                               2         pfil_mbuf_in+0x38       
+      4096 |@                              4         ether_demux+0x46        
+      8192 |                               2         ether_nh_input+0x36a    
+                                                     netisr_dispatch_src+0x9f
+                                                     ether_input+0x56        
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0%  99% 0.00    52115 sched lock 1           sched_userret_slowpath+0xf
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     65536 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         userret+0xbe            
+                                                     amd64_syscall+0x276     
+                                                     0xffffffff810c8fdb      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    9   0%  99% 0.00     5519 sched lock 1           ithread_loop+0xe9       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@                         2         fork_exit+0x81          
+      1024 |                               0         0xffffffff810c972e      
+      2048 |                               0         
+      4096 |                               0         
+      8192 |@@@@@@@@@@@@@@@@               5         
+     16384 |@@@@@@                         2         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+   10   0%  99% 0.00     2973 sched lock 3           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      1024 |@@@                            1         intr_event_handle+0x28b 
+      2048 |                               0         intr_execute_handlers+0x49
+      4096 |@@@@@@@@@@@@@@@@@@@@@@@@@@@    9         0xffffffff810c9a0c      
+                                                     acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    6   0% 100% 0.00     4947 sched lock 3           critical_exit_preempt+0x33
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@                          1         sched_idletd+0x6c6      
+      1024 |@@@@@                          1         fork_exit+0x81          
+      2048 |                               0         0xffffffff810c972e      
+      4096 |                               0         
+      8192 |@@@@@@@@@@@@@@@                3         
+     16384 |@@@@@                          1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00    13874 sched lock 1           sleepq_add+0xd8         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@                1         _sleep+0x15c            
+       512 |                               0         taskqueue_thread_loop+0xb1
+      1024 |                               0         fork_exit+0x81          
+      2048 |                               0         0xffffffff810c972e      
+      4096 |                               0         
+      8192 |                               0         
+     16384 |                               0         
+     32768 |@@@@@@@@@@@@@@@                1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00    24715 sched lock 1           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+     32768 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     mb_ctor_mbuf+0x5e       
+                                                     uma_zalloc_arg+0xff     
+                                                     ip_forward+0x17d        
+                                                     ip_input+0x790          
+                                                     swi_net+0x128           
+                                                     ithread_loop+0x239      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    3   0% 100% 0.00     6461 sched lock 1           sched_idletd+0x58       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@                     1         fork_exit+0x81          
+       512 |@@@@@@@@@@                     1         0xffffffff810c972e      
+      1024 |                               0         
+      2048 |                               0         
+      4096 |                               0         
+      8192 |                               0         
+     16384 |                               0         
+     32768 |@@@@@@@@@@                     1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    5   0% 100% 0.00     2346 sched lock 0           ithread_loop+0xe9       
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@@@@             3         fork_exit+0x81          
+      1024 |@@@@@@                         1         0xffffffff810c972e      
+      2048 |                               0         
+      4096 |                               0         
+      8192 |                               0         
+     16384 |@@@@@@                         1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00     4247 sched lock 1           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@                1         intr_event_handle+0x28b 
+      1024 |                               0         intr_execute_handlers+0x49
+      2048 |                               0         0xffffffff810c9a0c      
+      4096 |                               0         acpi_cpu_idle+0x2cd     
+      8192 |@@@@@@@@@@@@@@@                1         cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00     4007 sched lock 2           statclock+0xfc          
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@@@@@@@@@@@@@@                1         handleevents+0xf8       
+      8192 |@@@@@@@@@@@@@@@                1         timercb+0x250           
+                                                     lapic_handle_timer+0xab 
+                                                     0xffffffff810ca3f1      
+                                                     acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     7068 sched lock 2           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         ipi_bitmap_handler+0x86 
+                                                     0xffffffff810caa33      
+                                                     cpu_activeclock+0x75    
+                                                     cpu_idle+0xa6           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     5936 sched lock 3           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    4   0% 100% 0.00     1413 sched lock 1           critical_exit_preempt+0x33
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@                2         sched_idletd+0x6c6      
+      1024 |@@@@@@@                        1         fork_exit+0x81          
+      2048 |                               0         0xffffffff810c972e      
+      4096 |                               0         
+      8192 |@@@@@@@                        1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     5106 sched lock 0           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         swi_sched+0x76          
+                                                     netisr_queue_internal+0x108
+                                                     netisr_dispatch_src+0x3ab
+                                                     pppoe_pfil_in+0x2c9     
+                                                     pfil_mbuf_in+0x38       
+                                                     ether_demux+0x46        
+                                                     ether_nh_input+0x36a    
+                                                     netisr_dispatch_src+0x9f
+                                                     ether_input+0x56        
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     5078 sched lock 2           statclock+0xfc          
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      8192 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         handleevents+0xf8       
+                                                     timercb+0x250           
+                                                     lapic_handle_timer+0xab 
+                                                     0xffffffff810ca3f1      
+                                                     sched_idletd+0x58       
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00     2473 sched lock 2           critical_exit_preempt+0x33
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@                1         sched_idletd+0x6c6      
+      1024 |                               0         fork_exit+0x81          
+      2048 |                               0         0xffffffff810c972e      
+      4096 |                               0         
+      8192 |@@@@@@@@@@@@@@@                1         
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     3377 sched lock 3           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         ipi_bitmap_handler+0x86 
+                                                     0xffffffff810caa33      
+                                                     sched_idletd+0x58       
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     3026 sched lock 3           softclock_thread+0x74   
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    5   0% 100% 0.00      602 sched lock 2           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@                         1         intr_event_handle+0x28b 
+       512 |@@@@@@@@@@@@                   2         intr_execute_handlers+0x49
+      1024 |@@@@@@                         1         0xffffffff810c9a0c      
+      2048 |@@@@@@                         1         acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     2941 sched lock 3           statclock+0xfc          
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         handleevents+0xf8       
+                                                     timercb+0x250           
+                                                     lapic_handle_timer+0xab 
+                                                     0xffffffff810ca3f1      
+                                                     acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     2356 sched lock 0           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      4096 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00     1652 sched lock 3           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      2048 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     vtnet_txq_mq_start_locked+0x6a
+                                                     vtnet_txq_mq_start+0x63 
+                                                     ether_output_frame+0xd3 
+                                                     ether_output+0x6b0      
+                                                     ip_output+0x1482        
+                                                     ip_forward+0x3a5        
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      520 sched lock 1           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+      1024 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         ipi_bitmap_handler+0x86 
+                                                     0xffffffff810caa33      
+                                                     __mtx_lock_sleep+0x3ab  
+                                                     sppp_input+0x4f0        
+                                                     swi_net+0x128           
+                                                     ithread_loop+0x239      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    2   0% 100% 0.00      199 sched lock 0           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 2         intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      331 sched lock 3           intr_event_schedule_thread+0x81
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_handle+0x28b 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     _libmd_SHA256_Update+0x5d
+                                                     random_fortuna_process_event+0x79
+                                                     random_kthread+0xff     
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      320 sched lock 2           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         ipi_bitmap_handler+0x86 
+                                                     0xffffffff810caa33      
+                                                     _libmd_SHA256_Update+0x5d
+                                                     random_fortuna_process_event+0x79
+                                                     random_kthread+0xff     
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      306 sched lock 0           sched_preempt+0x20      
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       512 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         ipi_bitmap_handler+0x86 
+                                                     0xffffffff810caa33      
+                                                     _libmd_SHA256_Update+0x5d
+                                                     random_fortuna_process_event+0x79
+                                                     random_kthread+0xff     
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      191 sched lock 2           sleepq_add+0xd8         
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         _sleep+0x15c            
+                                                     taskqueue_thread_loop+0xb1
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------
+Count indv cuml rcnt     nsec Lock                   Caller                  
+    1   0% 100% 0.00      152 sched lock 0           critical_exit_preempt+0x33
+
+      nsec ------ Time Distribution ------ count     Stack                   
+       256 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 1         intr_event_handle+0x2db 
+                                                     intr_execute_handlers+0x49
+                                                     0xffffffff810c9a0c      
+                                                     acpi_cpu_idle+0x2cd     
+                                                     cpu_idle_acpi+0x46      
+                                                     cpu_idle+0x9d           
+                                                     sched_idletd+0x6c6      
+                                                     fork_exit+0x81          
+                                                     0xffffffff810c972e      
+-------------------------------------------------------------------------------

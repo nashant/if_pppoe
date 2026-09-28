@@ -1,0 +1,5 @@
+@POCTL@
+-S
+-f
+@CFGFILE@
+@DEV@

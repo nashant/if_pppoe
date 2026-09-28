@@ -1,0 +1,6 @@
+# Runs after our own files (including src/etc/devd/if_pppoe.conf) have been
+# unlinked; +PRE_DEINSTALL's uninstall.sh ran in the foreground and has
+# already finished. Reload devd so it drops the removed match rules.
+if [ -z "${PKG_UPGRADE:-}" ]; then
+	/etc/rc.d/devd restart >/dev/null 2>&1 || true
+fi

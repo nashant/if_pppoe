@@ -1,0 +1,96 @@
+#!/usr/local/bin/php
+<?php
+
+/*
+ * Copyright (c) 2026 os-if-pppoe contributors
+ * All rights reserved.
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * os-if-pppoe engine.  Runs out of process only (hook, devd, cron, configd);
+ * never include()d into a core PHP process.
+ *
+ *   engine configure <friendly> <device> <ports-csv> <mtu> <mru>
+ *       exit 0 = claimed (core skips mpd5), anything else = core starts mpd5
+ *   engine reset <friendly> <device>
+ *   engine reconcile [--after-firmware]
+ *   engine status --json
+ *   engine notices --json                              (boot.json + notice.d only)
+ *   engine linkevent <device> <TYPE> [key=value ...]   (devd: queue + detached drain)
+ *   engine drain <device>
+ */
+
+namespace IfPppoe\Engine;
+
+require_once __DIR__ . '/lib/Env.php';
+require_once __DIR__ . '/lib/Proc.php';
+require_once __DIR__ . '/lib/Config.php';
+require_once __DIR__ . '/lib/State.php';
+require_once __DIR__ . '/lib/Eligibility.php';
+require_once __DIR__ . '/lib/Pppoectl.php';
+require_once __DIR__ . '/lib/Kernel.php';
+require_once __DIR__ . '/lib/Engine.php';
+
+function usage(): int
+{
+    fwrite(STDERR, "usage: engine configure <friendly> <device> <ports> <mtu> <mru>\n"
+        . "       engine reset <friendly> <device>\n"
+        . "       engine reconcile [--after-firmware]\n"
+        . "       engine status --json\n"
+        . "       engine notices --json\n"
+        . "       engine linkevent <device> <TYPE> [key=value ...]\n"
+        . "       engine drain <device>\n");
+    return Engine::EXIT_USAGE;
+}
+
+function main(array $argv): int
+{
+    umask(077);
+    $cmd = $argv[1] ?? '';
+    $env = new Env();
+    $engine = new Engine($env, new Kernel($env, new Proc()));
+
+    switch ($cmd) {
+        case 'configure':
+            if (count($argv) < 4) {
+                return usage();
+            }
+            return $engine->configure($argv[2], $argv[3], $argv[4] ?? '', $argv[5] ?? '', $argv[6] ?? '');
+        case 'reset':
+            if (count($argv) < 4) {
+                return usage();
+            }
+            return $engine->reset($argv[2], $argv[3]);
+        case 'reconcile':
+            return $engine->reconcile(in_array('--after-firmware', array_slice($argv, 2), true));
+        case 'status':
+            echo json_encode($engine->statusReport(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            return 0;
+        case 'notices':
+            /* cheap subset of status for the System Status class (IfPppoeStatus.php) */
+            echo json_encode($engine->notices(), JSON_UNESCAPED_SLASHES) . "\n";
+            return 0;
+        case 'linkevent':
+            if (count($argv) < 4) {
+                return usage();
+            }
+            return $engine->linkevent($argv[2], $argv[3], array_slice($argv, 4));
+        case 'drain':
+            if (count($argv) < 3) {
+                return usage();
+            }
+            return $engine->drain($argv[2]);
+        default:
+            return usage();
+    }
+}
+
+try {
+    exit(main($argv));
+} catch (\Throwable $e) {
+    openlog('if_pppoe', LOG_PID, LOG_DAEMON);
+    syslog(LOG_ERR, 'engine ' . ($argv[1] ?? '') . ' failed: ' . $e->getMessage());
+    closelog();
+    fwrite(STDERR, 'engine: ' . $e->getMessage() . "\n");
+    /* never 0: for configure that means "not claimed", so core falls back to mpd5 */
+    exit(Engine::EXIT_FAILED);
+}

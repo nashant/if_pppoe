@@ -1,0 +1,282 @@
+[
+    {
+        "name": "chap-basic",
+        "device": "@DEV@",
+        "discovery_argv": [
+            "@POCTL@",
+            "-e",
+            "@PARENT@",
+            "-s",
+            "ISP-SVC",
+            "@DEV@"
+        ],
+        "settings_argv": [
+            "@POCTL@",
+            "-S",
+            "-f",
+            "@CFGFILE@",
+            "@DEV@"
+        ],
+        "settings_stdin": "s3cr3t-Pa55\n",
+        "settings_file": "myauthproto=chap\npassiveauthproto\nmyauthname=user@isp.example\nhisauthproto=none\nmax-auth-failure=0\nipcp\nipv6cp\nquery-dns=0\nmssfix\n",
+        "verify_argv": [
+            "@POCTL@",
+            "@DEV@"
+        ],
+        "mtu_argv": [
+            "@IFCONFIG@",
+            "@DEV@",
+            "mtu",
+            "1492"
+        ],
+        "expect": {
+            "myauthproto": "chap",
+            "myauthname": "user@isp.example",
+            "hisauthproto_absent": true,
+            "max_auth_failure": 0,
+            "ipcp": true,
+            "ipv6cp": true,
+            "mssfix": true
+        }
+    },
+    {
+        "name": "chap-service-mtu-mssfix-off",
+        "device": "@DEV@",
+        "discovery_argv": [
+            "@POCTL@",
+            "-e",
+            "@PARENT@",
+            "-s",
+            "svc with space",
+            "@DEV@"
+        ],
+        "settings_argv": [
+            "@POCTL@",
+            "-S",
+            "-f",
+            "@CFGFILE@",
+            "@DEV@"
+        ],
+        "settings_stdin": "anotherPW9\n",
+        "settings_file": "myauthproto=chap\npassiveauthproto\nmyauthname=wan-user\nhisauthproto=none\nmax-auth-failure=0\nipcp\nnoipv6cp\nquery-dns=3\nnomssfix\n",
+        "verify_argv": [
+            "@POCTL@",
+            "@DEV@"
+        ],
+        "mtu_argv": [
+            "@IFCONFIG@",
+            "@DEV@",
+            "mtu",
+            "1480"
+        ],
+        "expect": {
+            "myauthproto": "chap",
+            "myauthname": "wan-user",
+            "hisauthproto_absent": true,
+            "max_auth_failure": 0,
+            "ipcp": true,
+            "ipv6cp": false,
+            "mssfix": false
+        }
+    },
+    {
+        "name": "chap-no-service-username-escaped",
+        "device": "@DEV@",
+        "discovery_argv": [
+            "@POCTL@",
+            "-e",
+            "@PARENT@",
+            "@DEV@"
+        ],
+        "settings_argv": [
+            "@POCTL@",
+            "-S",
+            "-f",
+            "@CFGFILE@",
+            "@DEV@"
+        ],
+        "settings_stdin": "plainpass\n",
+        "settings_file": "myauthproto=chap\npassiveauthproto\nmyauthname=us\\#er\\\\name\nhisauthproto=none\nmax-auth-failure=0\nipcp\nipv6cp\nquery-dns=0\nmssfix\n",
+        "verify_argv": [
+            "@POCTL@",
+            "@DEV@"
+        ],
+        "mtu_argv": [
+            "@IFCONFIG@",
+            "@DEV@",
+            "mtu",
+            "1492"
+        ],
+        "expect": {
+            "myauthproto": "chap",
+            "myauthname": "us#er\\name",
+            "hisauthproto_absent": true,
+            "max_auth_failure": 0,
+            "ipcp": true,
+            "ipv6cp": true,
+            "mssfix": true
+        }
+    },
+    {
+        "name": "chap-secret-spaces-and-tabs",
+        "device": "@DEV@",
+        "discovery_argv": [
+            "@POCTL@",
+            "-e",
+            "@PARENT@",
+            "-s",
+            "lab",
+            "@DEV@"
+        ],
+        "settings_argv": [
+            "@POCTL@",
+            "-S",
+            "-f",
+            "@CFGFILE@",
+            "@DEV@"
+        ],
+        "settings_stdin": "  lead\ttrail\tsecret  \n",
+        "settings_file": "myauthproto=chap\npassiveauthproto\nmyauthname=tabuser\nhisauthproto=none\nmax-auth-failure=0\nipcp\nnoipv6cp\nquery-dns=0\nmssfix\n",
+        "verify_argv": [
+            "@POCTL@",
+            "@DEV@"
+        ],
+        "mtu_argv": [
+            "@IFCONFIG@",
+            "@DEV@",
+            "mtu",
+            "1492"
+        ],
+        "expect": {
+            "myauthproto": "chap",
+            "myauthname": "tabuser",
+            "hisauthproto_absent": true,
+            "max_auth_failure": 0,
+            "ipcp": true,
+            "ipv6cp": false,
+            "mssfix": true
+        }
+    },
+    {
+        "name": "chap-secret-unicode",
+        "device": "@DEV@",
+        "discovery_argv": [
+            "@POCTL@",
+            "-e",
+            "@PARENT@",
+            "-s",
+            "lab",
+            "@DEV@"
+        ],
+        "settings_argv": [
+            "@POCTL@",
+            "-S",
+            "-f",
+            "@CFGFILE@",
+            "@DEV@"
+        ],
+        "settings_stdin": "pâsswörd_ünïcødé_密码\n",
+        "settings_file": "myauthproto=chap\npassiveauthproto\nmyauthname=unicodeuser\nhisauthproto=none\nmax-auth-failure=0\nipcp\nipv6cp\nquery-dns=0\nnomssfix\n",
+        "verify_argv": [
+            "@POCTL@",
+            "@DEV@"
+        ],
+        "mtu_argv": [
+            "@IFCONFIG@",
+            "@DEV@",
+            "mtu",
+            "1492"
+        ],
+        "expect": {
+            "myauthproto": "chap",
+            "myauthname": "unicodeuser",
+            "hisauthproto_absent": true,
+            "max_auth_failure": 0,
+            "ipcp": true,
+            "ipv6cp": true,
+            "mssfix": false
+        }
+    },
+    {
+        "name": "pap-basic",
+        "device": "@DEV@",
+        "discovery_argv": [
+            "@POCTL@",
+            "-e",
+            "@PARENT@",
+            "-s",
+            "pap-svc",
+            "@DEV@"
+        ],
+        "settings_argv": [
+            "@POCTL@",
+            "-S",
+            "-f",
+            "@CFGFILE@",
+            "@DEV@"
+        ],
+        "settings_stdin": "pappw-123\n",
+        "settings_file": "myauthproto=pap\nmyauthname=pap-user\nhisauthproto=none\nmax-auth-failure=0\nipcp\nnoipv6cp\nquery-dns=0\nmssfix\n",
+        "verify_argv": [
+            "@POCTL@",
+            "@DEV@"
+        ],
+        "mtu_argv": [
+            "@IFCONFIG@",
+            "@DEV@",
+            "mtu",
+            "1492"
+        ],
+        "expect": {
+            "myauthproto": "pap",
+            "myauthname": "pap-user",
+            "hisauthproto_absent": true,
+            "max_auth_failure": 0,
+            "ipcp": true,
+            "ipv6cp": false,
+            "mssfix": true
+        }
+    },
+    {
+        "name": "ac-name-set",
+        "device": "@DEV@",
+        "discovery_argv": [
+            "@POCTL@",
+            "-e",
+            "@PARENT@",
+            "-s",
+            "svc-for-ac",
+            "-a",
+            "AC-Concentrator #1",
+            "@DEV@"
+        ],
+        "settings_argv": [
+            "@POCTL@",
+            "-S",
+            "-f",
+            "@CFGFILE@",
+            "@DEV@"
+        ],
+        "settings_stdin": "acpassword\n",
+        "settings_file": "myauthproto=chap\npassiveauthproto\nmyauthname=acuser\nhisauthproto=none\nmax-auth-failure=0\nipcp\nipv6cp\nquery-dns=0\nmssfix\n",
+        "verify_argv": [
+            "@POCTL@",
+            "@DEV@"
+        ],
+        "mtu_argv": [
+            "@IFCONFIG@",
+            "@DEV@",
+            "mtu",
+            "1492"
+        ],
+        "expect": {
+            "myauthproto": "chap",
+            "myauthname": "acuser",
+            "hisauthproto_absent": true,
+            "max_auth_failure": 0,
+            "ipcp": true,
+            "ipv6cp": true,
+            "mssfix": true
+        }
+    }
+]

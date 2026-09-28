@@ -1,0 +1,17 @@
+Replaces mpd5 with an in-kernel PPPoE driver (if_pppoe(4)) for eligible
+PPPoE WAN interfaces, on OPNsense 25.7.x / FreeBSD 14.3, amd64, standalone
+boxes only (no CARP/HA).
+
+This plugin only records whether kernel mode is desired; applying a change
+requires a reboot. It never switches a live session. On boot, if enabled,
+early startup verifies the installed if-pppoe-kmod package matches the
+running kernel build and offers the kernel features this plugin requires,
+then hands eligible PPPoE interfaces to the kernel driver in place of mpd5.
+Any check that fails, or any interface this plugin does not support (yet),
+falls back to stock mpd5 automatically — nothing about your PPPoE
+configuration in Interfaces -> Point-to-Point changes.
+
+See Services -> Kernel PPPoE for the enable/exclude toggle, current hook
+and per-interface backend status, and the Reboot action.
+
+WWW: https://github.com/nashant/if_pppoe

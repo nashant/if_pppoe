@@ -1,0 +1,33 @@
+# Optional self-hosted Renovate. Not needed when the Mend Renovate GitHub App
+# is installed on the repo (it reads the same renovate.json). Enable by
+# setting repo variable RENOVATE_SELF_HOSTED=true and secret RENOVATE_TOKEN
+# (fine-grained PAT or GitHub App token; PRs opened with GITHUB_TOKEN would
+# not trigger ci.yml). See docs/CI.md#renovate.
+name: renovate
+
+on:
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    if: ${{ vars.RENOVATE_SELF_HOSTED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: renovatebot/github-action@f3a31a786096ba6b40d0f0ffe11a494ef73bfa7c # v46.3.4
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: 'false'
+          RENOVATE_REQUIRE_CONFIG: required
+          LOG_LEVEL: info
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}

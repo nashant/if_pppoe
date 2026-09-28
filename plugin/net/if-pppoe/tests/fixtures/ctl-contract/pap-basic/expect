@@ -1,0 +1,7 @@
+myauthproto='pap'
+myauthname='pap-user'
+hisauthproto_absent=1
+max_auth_failure='0'
+ipcp=1
+ipv6cp=0
+mssfix=1

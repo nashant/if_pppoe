@@ -1,0 +1,5 @@
+requests
+defusedxml     # optional hardening for config_diff.py's XML parsing; falls back to stdlib if absent
+pytest
+pytest-timeout  # optional: enforces @pytest.mark.timeout(...) on test_roundtrip; conftest.py
+                # registers the marker either way, so it's a harmless no-op without this

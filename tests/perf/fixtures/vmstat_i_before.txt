@@ -1,0 +1,20 @@
+interrupt                          total       rate
+cpu0:timer                    1823221722        211
+cpu1:timer                    1596001171        185
+cpu2:timer                    1649530319        191
+cpu3:timer                    1634113889        189
+irq128: hdac0                          5          0
+irq129: ahci0                  113723179         13
+irq130: igc0:rxq0              889032109        103
+irq131: igc0:rxq1              858200121         99
+irq132: igc0:rxq2              805675095         93
+irq133: igc0:rxq3              693916830         80
+irq134: igc0:aq                        9          0
+irq135: igc1:rxq0            14731510450       1705
+irq136: igc1:rxq1            11875405603       1374
+irq137: igc1:rxq2            11778416956       1363
+irq138: igc1:rxq3            12225297736       1415
+irq139: igc1:aq                        2          0
+irq149: igc3:aq                        1          0
+irq150: xhci0                         39          0
+Total                        60674045236       7020

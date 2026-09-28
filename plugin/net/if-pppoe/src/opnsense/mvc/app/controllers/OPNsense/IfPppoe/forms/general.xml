@@ -1,0 +1,19 @@
+<form>
+    <field>
+        <id>ifpppoe.general.enabled</id>
+        <label>Enable kernel PPPoE</label>
+        <type>checkbox</type>
+        <help><![CDATA[
+            Use the in-kernel if_pppoe(4) driver instead of mpd5 for eligible PPPoE WANs.
+            <b>Takes effect on next reboot only</b> — there is no live switch.
+        ]]></help>
+    </field>
+    <field>
+        <id>ifpppoe.general.exclude</id>
+        <label>Excluded interfaces</label>
+        <type>select_multiple</type>
+        <help><![CDATA[
+            PPPoE WANs to always keep on mpd5, even when kernel PPPoE is enabled.
+        ]]></help>
+    </field>
+</form>

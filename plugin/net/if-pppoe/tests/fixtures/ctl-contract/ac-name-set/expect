@@ -1,0 +1,7 @@
+myauthproto='chap'
+myauthname='acuser'
+hisauthproto_absent=1
+max_auth_failure='0'
+ipcp=1
+ipv6cp=1
+mssfix=1

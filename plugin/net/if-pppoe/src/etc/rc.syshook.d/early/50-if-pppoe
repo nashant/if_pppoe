@@ -1,0 +1,94 @@
+#!/bin/sh
+# os-if-pppoe boot gate.  Runs from /usr/local/etc/rc before rc.bootup.
+# Decides, once per boot, whether the kernel PPPoE path is armed:
+# desired state, boot-strike latch, kmod for this exact kernel, kmod
+# features, then the interfaces.inc hook.  Any failure leaves the box on
+# stock mpd5.  Never exits non-zero (rc.syshook would only log it).
+
+. "${IF_PPPOE_LIB:-/usr/local/opnsense/scripts/if_pppoe/lib.sh}"
+
+mkdir -p "${IF_PPPOE_CONF_DIR}" "${IF_PPPOE_RUN_DIR}"
+chmod 0700 "${IF_PPPOE_CONF_DIR}"
+rm -f "${IF_PPPOE_RUN_DIR}"/notice.d/boot-*
+
+stay_stock()
+{
+	# $1 = boot result word, $2 = reason word, $3 = optional boot.json member
+	if ! _out=$(ifp_hookctl revert --reason=boot 2>&1); then
+		ifp_notice boot-revert "could not remove the interfaces.inc hook: ${_out}"
+	fi
+	ifp_kmod_unload
+	rm -f "${IF_PPPOE_CONF_DIR}/boot.pending"
+	ifp_boot_state "${1}" "${2}" "${3:-}"
+}
+
+fail()
+{
+	ifp_notice boot-failed "kernel PPPoE not armed this boot (${1}); using mpd5"
+	stay_stock failed "${1}" "$(ifp_kmod_identity)"
+	exit 0
+}
+
+if [ "$(ifp_desired)" != "enabled" ]; then
+	stay_stock disabled desired-disabled
+	exit 0
+fi
+
+latch="${IF_PPPOE_CONF_DIR}/latch"
+strikes="${IF_PPPOE_CONF_DIR}/strikes"
+
+if [ -f "${latch}" ]; then
+	if [ "${IF_PPPOE_CONF_DIR}/desired" -nt "${latch}" ]; then
+		# re-applied in the GUI after the latch: start over
+		rm -f "${latch}" "${strikes}"
+		ifp_log "kernel PPPoE re-enabled after boot-strike latch"
+	else
+		ifp_notice boot-latched "kernel PPPoE disabled after ${IF_PPPOE_STRIKE_MAX} unclean boots within 24h; save and apply the plugin settings again to retry"
+		stay_stock latched strikes
+		exit 0
+	fi
+fi
+
+now=$(ifp_now)
+if [ -f "${IF_PPPOE_CONF_DIR}/boot.pending" ]; then
+	# the previous armed boot never reached the start syshook
+	echo "${now}" >> "${strikes}"
+	ifp_log "previous boot with kernel PPPoE did not complete (strike)" warning
+fi
+if [ -f "${strikes}" ]; then
+	awk -v now="${now}" -v win="${IF_PPPOE_STRIKE_WINDOW}" \
+	    '$1 ~ /^[0-9]+$/ && now - $1 < win { print $1 }' "${strikes}" > "${strikes}.new"
+	mv "${strikes}.new" "${strikes}"
+	count=$(wc -l < "${strikes}" | tr -d ' ')
+	if [ "${count}" -ge "${IF_PPPOE_STRIKE_MAX}" ]; then
+		echo "${now}" > "${latch}"
+		ifp_notice boot-latched "kernel PPPoE disabled after ${count} unclean boots within 24h; save and apply the plugin settings again to retry"
+		stay_stock latched strikes
+		exit 0
+	fi
+fi
+
+echo "${now}" > "${IF_PPPOE_CONF_DIR}/boot.pending"
+
+ko=$(ifp_kmod_path) || fail "${ko}"
+if ! ifp_kmod_loaded; then
+	${IF_PPPOE_KLDLOAD} "${ko}" || fail kldload
+fi
+why=$(ifp_kmod_features) || fail "${why}"
+# If the module was already resident (the branch above did not kldload it), this hashes the
+# on-disk .ko for the running build_id, not necessarily what the kernel actually has loaded
+# (e.g. a kmod upgrade followed by a service restart with no reboot). loaded.json can then
+# falsely claim a match; kmodUpgradePending() trusts it as-is.
+ifp_kmod_record_loaded "${ko}"
+
+if ! out=$(ifp_hookctl apply --reason=boot 2>/dev/null); then
+	# apply refused: it did not modify the file, keep its recorded reason
+	ifp_notice boot-failed "interfaces.inc hook not applied (${out}); using mpd5"
+	ifp_kmod_unload
+	rm -f "${IF_PPPOE_CONF_DIR}/boot.pending"
+	ifp_boot_state failed hook
+	exit 0
+fi
+
+ifp_boot_state enabled ok
+exit 0
