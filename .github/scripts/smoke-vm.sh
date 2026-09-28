@@ -110,7 +110,10 @@ fetch_image() {
 	local want got
 	want=$(grep -F "($xz)" "$IMAGE_CACHE/CHECKSUM.SHA256" | awk '{print $NF}')
 	got=$(sha256sum "$IMAGE_CACHE/$xz" | awk '{print $1}')
-	[ -n "$want" ] && [ "$want" = "$got" ] || { echo "smoke-vm: checksum mismatch for $xz ($want vs $got)" >&2; exit 1; }
+	if [ -z "$want" ] || [ "$want" != "$got" ]; then
+		echo "smoke-vm: checksum mismatch for $xz ($want vs $got)" >&2
+		exit 1
+	fi
 	xz -dc "$IMAGE_CACHE/$xz" > "$IMG"
 }
 

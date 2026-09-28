@@ -98,10 +98,10 @@ cmd_module() {
 # does not push $CI/ctl-contract/ + $CI/ctl-contract-replay.sh yet, so
 # until it does this is a documented no-op, not a hard smoke requirement.
 cmd_ctl_contract() {
-	[ -d "$CI/ctl-contract" ] && [ -f "$CI/ctl-contract-replay.sh" ] || {
+	if [ ! -d "$CI/ctl-contract" ] || [ ! -f "$CI/ctl-contract-replay.sh" ]; then
 		log "ctl-contract fixtures not staged under $CI, skipping"
 		return 0
-	}
+	fi
 	# This guest has only one NIC (vtnet0, smoke-vm.sh's -netdev/-device pair, and
 	# it carries the ssh session): an epair stands in for a parent, as cmd_dial's
 	# jailed mpd5 test does, rather than PPPOESETPARMS-ing a nonexistent vtnet1
@@ -181,7 +181,9 @@ EOF
 
 cleanup_dial() {
 	ifconfig pppoe0 destroy 2>/dev/null || true
-	[ -f "$CI/mpd/mpd.pid" ] && jexec pppsrv kill "$(cat "$CI/mpd/mpd.pid")" 2>/dev/null || true
+	if [ -f "$CI/mpd/mpd.pid" ]; then
+		jexec pppsrv kill "$(cat "$CI/mpd/mpd.pid")" 2>/dev/null || true
+	fi
 	jail -r pppsrv 2>/dev/null || true
 	umount -f "$CI/mpd" 2>/dev/null || true
 	ifconfig "$1" destroy 2>/dev/null || true

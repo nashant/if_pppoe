@@ -17,6 +17,11 @@ SRCS+=	if_pppoe_netisr.c
 # in S02+.
 SRCS+=	if_spppsubr.c
 SRCS+=	opt_global.h opt_inet.h opt_inet6.h opt_rss.h
+# <sys/bus.h> (via net/if_sppp_compat.h) includes the generated device_if.h
+# and bus_if.h.  A full kernel build dir already holds them, but CI's
+# config -d-only KERNBUILDDIR (plugin/build/lib/kbuild.sh) does not, so let
+# kmod.mk generate them from ${SYSDIR}/kern/*.m into the module's objdir.
+SRCS+=	device_if.h bus_if.h
 
 CFLAGS+=	-I${.CURDIR}/../..
 
