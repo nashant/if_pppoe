@@ -98,8 +98,16 @@ kjson() { # BID FIELD
 }
 
 fetch_image() {
-	local base="https://download.freebsd.org/releases/VM-IMAGES/${FREEBSD_VERSION}-RELEASE/amd64/Latest"
+	local rel="VM-IMAGES/${FREEBSD_VERSION}-RELEASE/amd64/Latest" base
 	local xz="FreeBSD-${FREEBSD_VERSION}-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
+	# EOL releases move from download.freebsd.org to archive.freebsd.org's
+	# old-releases (14.3 did: releases/VM-IMAGES/ lists 14.4+ only).
+	for base in "https://download.freebsd.org/releases/$rel" \
+	    "https://archive.freebsd.org/old-releases/$rel"; do
+		if curl -fsSL --retry 3 -o /dev/null -r 0-0 "$base/CHECKSUM.SHA256"; then
+			break
+		fi
+	done
 	IMG="$SMOKE_DIR/${xz%.xz}"
 	# IMAGE_CACHE keeps only the .xz (actions/cache); re-verified every run.
 	if [ ! -f "$IMAGE_CACHE/$xz" ]; then
