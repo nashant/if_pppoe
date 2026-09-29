@@ -226,10 +226,12 @@ EOF
 	gput "$HERE/smoke-guest.sh" "$SSH_USER@127.0.0.1:/tmp/ci/"
 	gput "$ARTIFACT_DIR"/bin/* "$SSH_USER@127.0.0.1:/tmp/ci/bin/"
 	gput "$SMOKE_DIR"/sets/*.txz "$SSH_USER@127.0.0.1:/tmp/ci/sets/"
-	while read -r bid; do
-		gssh "mkdir -p /tmp/ci/ko/$bid"
-		gput "$ARTIFACT_DIR/ko/$bid/if_pppoe.ko" "$SSH_USER@127.0.0.1:/tmp/ci/ko/$bid/"
-	done < "$STAGED"
+	# fd 3, not stdin: ssh/scp in the body would swallow the rest of the
+	# list (only the first kernel's .ko reached the guest).
+	while read -r bid <&3; do
+		gssh "mkdir -p /tmp/ci/ko/$bid" </dev/null
+		gput "$ARTIFACT_DIR/ko/$bid/if_pppoe.ko" "$SSH_USER@127.0.0.1:/tmp/ci/ko/$bid/" </dev/null
+	done 3< "$STAGED"
 	gssh 'chmod +x /tmp/ci/bin/*'
 	rm -rf "$SMOKE_DIR/sets"
 }
