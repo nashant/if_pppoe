@@ -248,15 +248,19 @@ jobs:
           PASS: ${{ steps.pass.outcome }}
           SMOKE: ${{ inputs.smoke }}
         run: |
+          # No kmods for this ABI means its kmods job failed: fail here too
+          # (an experimental ABI's package is continue-on-error anyway).
           if [ "$KMODS" != success ]; then
-            echo "::warning::no kmods-$SLUG artifact; package skipped"
+            echo "::error::no kmods-$SLUG artifact (the kmods $SLUG build failed); nothing to package"
             echo "run=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            exit 1
           fi
           echo "run=true" >> "$GITHUB_OUTPUT"
           if [ "$SMOKE" = true ]; then
             [ "$PASS" = success ] || { echo "::error::smoke produced no pass-build-ids-$SLUG"; exit 1; }
             [ -f pass/pass-build-ids.txt ] || { echo "::error::pass-build-ids-$SLUG has no pass-build-ids.txt"; exit 1; }
+            gate=$(cat pass/gate.txt 2>/dev/null || echo "no gate.txt in pass-build-ids-$SLUG")
+            [ "$gate" = ok ] || { echo "::error::smoke gate for $SLUG failed: $gate"; exit 1; }
             cp pass/pass-build-ids.txt pass-build-ids.txt
             echo "pass=pass-build-ids.txt" >> "$GITHUB_OUTPUT"
           else

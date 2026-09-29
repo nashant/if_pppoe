@@ -98,7 +98,7 @@
 #   BUILD_ALL_WORK  Scratch dir (default plugin/build/work-all); wiped.
 #   PLUGIN_ABIS, PLUGIN_PHP   Forwarded to build-plugin.sh (its own
 #                             defaults: 25.7 / 83).
-#   SRC_REPO, TOOLS_RAW, TOOLS_FALLBACK_REF   (kernels-json mode) see
+#   SRC_REPO, TOOLS_RAW, TOOLS_REPO   (kernels-json mode) see
 #                 lib/kbuild.sh kb_prepare.
 set -eu
 

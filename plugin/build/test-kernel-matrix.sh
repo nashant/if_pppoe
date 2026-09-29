@@ -210,6 +210,7 @@ STUB
 cat > "$STUBS/config" <<'STUB'
 #!/bin/sh
 [ "$1" = -d ] || exit 1
+[ -z "${STUB_CONFIG_NEED:-}" ] || grep -qF "$STUB_CONFIG_NEED" "$3" || exit 1
 mkdir -p "$2"
 sed -e 's/#.*//' -e 's/[[:space:]][[:space:]]*/ /g' -e 's/^ //' -e 's/ $//' "$3" |
 	grep -vE '^$|^ident( |$)|^makeoptions DEBUG' | LC_ALL=C sort -u > "$2/opt_global.h"
@@ -279,10 +280,10 @@ mkset "$B" kernel-25.7.5-amd64.txz "FreeBSD 14.3-RELEASE-p2" "$CONF_A"
 mkset "$B" kernel-25.7.10-amd64.txz "FreeBSD 14.3-RELEASE-p3" "$CONF_B"
 for tag in 25.7 25.7.2 25.7.5; do
 	mkdir -p "$T/tools/$tag/config/25.7"
-	printf '%s\nmakeoptions DEBUG=%%%%DEBUG%%%%\n' "$CONF_A" > "$T/tools/$tag/config/25.7/SMP"
+	printf '%s\nmakeoptions DEBUG=%%%%DEBUG%%%%\n# tools config\n' "$CONF_A" > "$T/tools/$tag/config/25.7/SMP"
 done
 mkdir -p "$T/tools/25.7.10/config/25.7"
-printf '%s\n' "$CONF_B" > "$T/tools/25.7.10/config/25.7/SMP"
+printf '%s\n# tools config\n' "$CONF_B" > "$T/tools/25.7.10/config/25.7/SMP"
 cat > "$T/bversions.json" <<EOF
 {"entries":[{"opnsense_series":"25.7","freebsd_abi":"FreeBSD:14:amd64","kernel_sets_url":"file://$B/"}]}
 EOF
@@ -320,8 +321,34 @@ else
 fi
 [ "$(find "$T/kbcache" -name 'kbuild-*.tar.gz' | wc -l | tr -d ' ')" = 3 ] &&
 	pass "one cached kernel build dir per built src tag" || fail "kbuild cache"
-grep -q 'match the published kernel' "$T/kmods.log" &&
-	pass "tools config cross-checked against the embedded config" || fail "no opt_*.h cross-check"
+grep -q "generated from the published kernel's embedded config" "$T/kmods.log" &&
+	pass "opt_*.h come from the published kernel's embedded config" || fail "embedded config not used"
+# An embedded config config(8) rejects falls back to opnsense/tools (the
+# stub config accepts only files carrying the tools marker line).
+if env STUB_CONFIG_NEED='# tools config' BUILD_ALL_WORK="$T/work-fb" PATH="$STUBS:$PATH" \
+	TOOLS_RAW="file://$T/tools" SRC_REPO="file:///nonexistent" DRIFT_TAGS="25.7" \
+	sh "$R/plugin/build/build-all.sh" --kernels-json "$KD/kernels.json" --abi FreeBSD:14:amd64 \
+	--cache "$T/kbcache-fb" --out "$T/out-fb" --phase kmods --version 0.4_3 > "$T/kmods-fb.log" 2>&1 &&
+	grep -q 'embedded config not usable by config -d; trying opnsense/tools' "$T/kmods-fb.log"; then
+	pass "unusable embedded config falls back to the opnsense/tools config"
+else
+	fail "tools fallback:"; sed 's/^/    /' "$T/kmods-fb.log"
+fi
+
+# kb_tools_config: exact tag, else the newest same-series tag <= the
+# version; never a later tag, another series or a pre-release.
+TT="$T/tools-fallback"
+for tag in 26.1 26.1.3 26.1.7 26.1.r1 26.7; do
+	d=$(echo "$tag" | cut -d. -f1-2)
+	mkdir -p "$TT/$tag/config/$d"
+	echo "conf of $tag" > "$TT/$tag/config/$d/SMP"
+done
+tc() { (TOOLS_RAW="file://$TT"; . "$HERE/lib/kbuild.sh"; kb_tools_config "$1" "$2" SMP "$T/tc.conf") 2>/dev/null; }
+[ "$(tc 26.1.7 26.1)" = 26.1.7 ] && pass "tools config: exact tag" || fail "tools config: exact tag -> '$(tc 26.1.7 26.1)'"
+[ "$(tc 26.1.6 26.1)" = 26.1.3 ] && grep -q 'conf of 26.1.3' "$T/tc.conf" &&
+	pass "tools config: untagged 26.1.6 falls back to 26.1.3" || fail "tools config: 26.1.6 -> '$(tc 26.1.6 26.1)'"
+[ "$(tc 26.1.2 26.1)" = 26.1 ] && pass "tools config: 26.1.2 falls back to 26.1" || fail "tools config: 26.1.2 -> '$(tc 26.1.2 26.1)'"
+if tc 25.7.9 25.7 > /dev/null; then fail "tools config: 25.7.9 used another series' config"; else pass "tools config: no same-series tag fails"; fi
 : > "$STUB_LOG"
 run_build_all --phase kmods --version 0.4_3 > "$T/kmods2.log" 2>&1 || fail "warm kmods run failed"
 if grep -q 'git clone' "$STUB_LOG"; then fail "warm cache cloned again"; else pass "warm cache reuses the kernel build dirs"; fi
