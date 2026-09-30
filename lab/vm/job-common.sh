@@ -151,15 +151,13 @@ module_prebuilt_deploy_load() {
     TOOLS_SRC_ROOT="$srcdir" ./install-client-tools.sh >"$logdir/tools-prebuilt.log" 2>&1 || {
         echo "module_prebuilt_deploy_load: client tools install failed" >&2
         tail -40 "$logdir/tools-prebuilt.log" >&2; return 1; }
-    if [ -n "$bindir" ]; then
-        for b in pppoectl pppoeparms spppioctl; do
-            [ -f "$bindir/$b" ] || continue
-            vm_ssh client "cat > /tmp/prebuilt-$b" < "$bindir/$b"
-            echo | vm_ssh client "su -m root -c 'install -m 0555 /tmp/prebuilt-$b /usr/local/sbin/$b && rm -f /tmp/prebuilt-$b'"
-            echo "prebuilt: /usr/local/sbin/$b <- $bindir/$b ($(sha256sum "$bindir/$b" | awk '{print $1}'))" \
-                | tee -a "$logdir/tools-prebuilt.log" >&2
-        done
-    fi
+    [ -n "$bindir" ] || return 0
+    local bins=()
+    for b in pppoectl pppoeparms spppioctl; do [ -f "$bindir/$b" ] && bins+=("$b"); done
+    [ "${#bins[@]}" -gt 0 ] || return 0
+    tar -C "$bindir" -cf - "${bins[@]}" | vm_ssh client 'rm -rf /tmp/prebuilt-bin && mkdir /tmp/prebuilt-bin && tar -C /tmp/prebuilt-bin -xf -'
+    echo | vm_ssh client "su -m root -c 'cd /tmp/prebuilt-bin && install -m 0555 ${bins[*]} /usr/local/sbin/ && rm -rf /tmp/prebuilt-bin'"
+    (cd "$bindir" && sha256sum "${bins[@]}") | sed 's|^|prebuilt: /usr/local/sbin <- |' | tee -a "$logdir/tools-prebuilt.log" >&2
 }
 
 # -------------------------------------------------------- VM up / recovery

@@ -22,6 +22,45 @@ NAME=client
 vm_config "$NAME"
 remote() { vm_ssh "$NAME" sh -s; }
 
+# write_loader_conf <kernel-dir-name>: boot that /boot/<name> (stock /boot/kernel stays the fallback).
+write_loader_conf() {
+    remote <<EOF
+set -eu
+asroot() { echo | su -m root -c "\$*"; }
+asroot sysrc -f /boot/loader.conf kernel=$1
+# netisr: one bound thread per vCPU, as on the DUT (client-repair.md notes;
+# boot-time tunables, so they take effect with the reboot below).
+# (sysrc rejects dotted names, so edit loader.conf directly, idempotently.)
+asroot "sed -i '' -e '/^net\.isr\.maxthreads=/d' -e '/^net\.isr\.bindthreads=/d' /boot/loader.conf && printf 'net.isr.maxthreads=\"%s\"\nnet.isr.bindthreads=\"1\"\n' $VM_VCPUS >> /boot/loader.conf"
+# Pin the rc.conf settings ssh reachability depends on: a power-cut once
+# truncated rc.conf to 0 bytes and the VM came back with no sshd/no vtnet0 IP.
+# vtnet1 is raw PPPoE only: "up", never DHCP (ifconfig_DEFAULT) on the lab bridge.
+asroot sysrc ifconfig_vtnet0=DHCP sshd_enable=YES ifconfig_vtnet1=up
+cat /boot/loader.conf
+EOF
+}
+
+reboot_client() {
+    remote <<'EOF'
+set -eu
+echo | su -m root -c "shutdown -r now" >/dev/null 2>&1 || true
+EOF
+    echo -n "Waiting for client to come back up "
+    sleep 5
+    local tries=0
+    until vm_ssh "$NAME" true 2>/dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge 150 ]; then
+            echo
+            echo "Timed out waiting for client ssh after reboot." >&2
+            exit 1
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo " up."
+}
+
 if [ -z "${KERNEL_SET_URL:-}" ]; then
 echo "=== [1/6] $KERNEL_VARIANT kernel -> client:/boot/kernel.$KERNEL_VARIANT ==="
 # Compares a sha256 of the build VM's kernel binary against a marker left
@@ -58,20 +97,7 @@ echo "kernel.$KERNEL_VARIANT: \$(ls /boot/kernel.$KERNEL_VARIANT/*.ko | wc -l | 
 EOF
 
 echo "=== [2/6] /boot/loader.conf: kernel=kernel.$KERNEL_VARIANT (stock /boot/kernel kept as fallback) ==="
-remote <<EOF
-set -eu
-asroot() { echo | su -m root -c "\$*"; }
-asroot sysrc -f /boot/loader.conf kernel=kernel.$KERNEL_VARIANT
-# netisr: one bound thread per vCPU, as on the DUT (client-repair.md notes;
-# boot-time tunables, so they take effect with the reboot below).
-# (sysrc rejects dotted names, so edit loader.conf directly, idempotently.)
-asroot "sed -i '' -e '/^net\.isr\.maxthreads=/d' -e '/^net\.isr\.bindthreads=/d' /boot/loader.conf && printf 'net.isr.maxthreads=\"%s\"\nnet.isr.bindthreads=\"1\"\n' $VM_VCPUS >> /boot/loader.conf"
-# Pin the rc.conf settings ssh reachability depends on: a power-cut once
-# truncated rc.conf to 0 bytes and the VM came back with no sshd/no vtnet0 IP.
-# vtnet1 is raw PPPoE only: "up", never DHCP (ifconfig_DEFAULT) on the lab bridge.
-asroot sysrc ifconfig_vtnet0=DHCP sshd_enable=YES ifconfig_vtnet1=up
-cat /boot/loader.conf
-EOF
+write_loader_conf "kernel.$KERNEL_VARIANT"
 echo "  (fallback to stock kernel: at the loader prompt — interrupt autoboot,"
 echo "  e.g. first 'sysrc -f /boot/loader.conf autoboot_delay=10' — run"
 echo "  'unset kernel' then 'boot', or 'boot kernel', per loader(8). Not"
@@ -85,24 +111,7 @@ case "$ALREADY_IDENT:$ALREADY_ISR" in
         ;;
     *)
         echo "=== [3/6] rebooting client onto kernel.$KERNEL_VARIANT ==="
-        remote <<'EOF'
-set -eu
-echo | su -m root -c "shutdown -r now" >/dev/null 2>&1 || true
-EOF
-        echo -n "Waiting for client to come back up "
-        sleep 5
-        tries=0
-        until vm_ssh "$NAME" true 2>/dev/null; do
-            tries=$((tries + 1))
-            if [ "$tries" -ge 150 ]; then
-                echo
-                echo "Timed out waiting for client ssh after reboot." >&2
-                exit 1
-            fi
-            echo -n "."
-            sleep 2
-        done
-        echo " up."
+        reboot_client
         ;;
 esac
 
@@ -172,31 +181,16 @@ else
 fi
 
 echo "=== [2/6] /boot/loader.conf: kernel=$KSET_NAME (stock /boot/kernel kept as fallback) ==="
-remote <<EOF
-set -eu
-asroot() { echo | su -m root -c "\$*"; }
-asroot sysrc -f /boot/loader.conf kernel=$KSET_NAME
-asroot "sed -i '' -e '/^net\.isr\.maxthreads=/d' -e '/^net\.isr\.bindthreads=/d' /boot/loader.conf && printf 'net.isr.maxthreads=\"%s\"\nnet.isr.bindthreads=\"1\"\n' $VM_VCPUS >> /boot/loader.conf"
-asroot sysrc ifconfig_vtnet0=DHCP sshd_enable=YES ifconfig_vtnet1=up
-cat /boot/loader.conf
-EOF
+write_loader_conf "$KSET_NAME"
 
-if [ "$(vm_ssh "$NAME" sysctl -n kern.build_id 2>/dev/null || true):$(vm_ssh "$NAME" sysctl -n net.isr.maxthreads 2>/dev/null || true)" = "$KERNEL_BUILD_ID:$VM_VCPUS" ]; then
+if [ "$(vm_ssh "$NAME" 'echo "$(sysctl -n kern.build_id):$(sysctl -n net.isr.maxthreads)"' 2>/dev/null || true)" = "$KERNEL_BUILD_ID:$VM_VCPUS" ]; then
     echo "=== [3/6] already booted on $KSET_NAME, skipping reboot ==="
 else
     echo "=== [3/6] rebooting client onto $KSET_NAME ==="
-    echo | vm_ssh "$NAME" 'su -m root -c "shutdown -r now"' >/dev/null 2>&1 || true
-    sleep 10
-    tries=0
-    until vm_ssh "$NAME" true 2>/dev/null; do
-        tries=$((tries + 1))
-        [ "$tries" -lt 150 ] || { echo "Timed out waiting for client ssh after reboot." >&2; exit 1; }
-        sleep 2
-    done
+    reboot_client
 fi
 echo "=== asserting the booted kernel is build_id $KERNEL_BUILD_ID ==="
-echo "uname -v: $(vm_ssh "$NAME" uname -v)"
-echo "kern.bootfile: $(vm_ssh "$NAME" sysctl -n kern.bootfile)"
+vm_ssh "$NAME" 'echo "uname -v: $(uname -v)"; echo "kern.bootfile: $(sysctl -n kern.bootfile)"'
 HAVE_BID="$(vm_ssh "$NAME" sysctl -n kern.build_id)"
 [ "$HAVE_BID" = "$KERNEL_BUILD_ID" ] || { echo "FAIL: kern.build_id $HAVE_BID != $KERNEL_BUILD_ID" >&2; exit 1; }
 echo "OK: kern.build_id = $HAVE_BID"
