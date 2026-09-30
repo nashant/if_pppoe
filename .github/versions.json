@@ -27,7 +27,7 @@
     },
     {
       "opnsense_series": "26.7",
-      "status": "experimental",
+      "status": "supported",
       "freebsd_version": "15.1",
       "freebsd_abi": "FreeBSD:15:amd64",
       "php_version": "8.5",
@@ -35,8 +35,7 @@
       "kernconf": "SMP",
       "opnsense_core_tag": "26.7.4",
       "kernel_sets_url": "https://pkg.opnsense.org/FreeBSD:15:amd64/26.7/sets/",
-      "opnsense_src_tag": "26.7.4",
-      "needs_port": true
+      "opnsense_src_tag": "26.7.4"
     }
   ]
 }
