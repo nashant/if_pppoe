@@ -10,7 +10,7 @@ import time
 
 from scapy.all import PPPoED
 
-from lab import ACCEL_AC_NAME, PADI, PADO, PADR, PADS, PADT, TAG_AC_NAME, TAG_HOST_UNIQ, pppoe_tags
+from lab import ACCEL_AC_NAME, PADI, PADO, PADR, PADS, PADT, TAG_AC_NAME, TAG_HOST_UNIQ, active_creds, pppoe_tags
 
 
 def _discovery_frames(sniffer):
@@ -119,9 +119,11 @@ def test_server_initiated_terminate_padt_and_redial(client, accel_server, sniffe
     before = wait_iface_up(client, timeout=20)
     assert before["up"] and before["inet"], f"client never came up before terminate test: {before}"
 
+    # The account is generated per run (labcreds.lab_session), not a fixed "lab".
+    user = active_creds().user
     sessions_before = accel_server.sessions()
-    assert any(s.get("username") == "lab" and s.get("state") == "active" for s in sessions_before), (
-        f"no active 'lab' session on the server before terminate: {sessions_before}"
+    assert any(s.get("username") == user and s.get("state") == "active" for s in sessions_before), (
+        f"no active {user!r} session on the server before terminate: {sessions_before}"
     )
 
     sniffer.start()
