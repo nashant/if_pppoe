@@ -6,7 +6,7 @@
 #   abi    one row per freebsd_abi over those entries (one kmod package per
 #          ABI): abi_slug, freebsd_version (highest), series (space-joined,
 #          lowest first), status (supported if any member is), php/python/
-#          kernconf of the lowest series, needs_port (any member).
+#          kernconf of the lowest series.
 #   php    one row per distinct php_version; experimental only when every
 #          entry using that PHP is experimental.
 # VERSIONS_FILE overrides the input (nightly.yml feeds resolved latest tags).
@@ -41,8 +41,7 @@ abi)
 			   status: (if any(.[]; .status == "supported") then "supported" else "experimental" end),
 			   php_version: .[0].php_version,
 			   python_version: .[0].python_version,
-			   kernconf: .[0].kernconf,
-			   needs_port: any(.[]; .needs_port == true)}]}
+			   kernconf: .[0].kernconf}]}
 	' "$file"
 	;;
 php)

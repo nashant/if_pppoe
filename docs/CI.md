@@ -85,9 +85,10 @@ An ABI's status is `supported` when any versions.json entry of that ABI is
 supported, else `experimental` (`matrix.sh abi`). An experimental ABI has
 `continue-on-error: true` on its build and smoke jobs, so it shows red and
 still leaves the run green. A PHP version counts as experimental only when
-every entry that uses it is experimental. Today `FreeBSD:14:amd64` (25.7
-supported, 26.1 experimental) is supported and `FreeBSD:15:amd64` (26.7) is
-experimental.
+every entry that uses it is experimental. `sh .github/scripts/matrix.sh abi`
+prints the current status of each ABI. A series is promoted to `supported`
+after a live lab run on its FreeBSD base (26.7: lab/vm/README.md "FreeBSD
+15.1 client").
 
 ### Artifacts
 
@@ -182,8 +183,7 @@ default/newest kernel; pin drift is informational.
   "opnsense_core_tag": "25.7.11",     // opnsense/core release; also the opnsense/tools tag
   "kernel_sets_url": "https://pkg.opnsense.org/FreeBSD:14:amd64/25.7/sets/", // discovery lists every kernel-<series>*.txz here
   "opnsense_src_tag": "25.7.11",      // newest kernel / toolchain default; kernel-<tag>-amd64.txz in kernel_sets_url
-  "require_features": false,          // no longer read: smoke.yml's require-features input (default true) applies to every kernel
-  "needs_port": false                 // optional: driver/lab not yet verified on this entry's FreeBSD base (informational; not read by any workflow yet)
+  "require_features": false           // no longer read: smoke.yml's require-features input (default true) applies to every kernel
 }
 ```
 
@@ -228,18 +228,8 @@ tag's `sys/conf/newvers.sh`):
     so upstream FreeBSD removed them between 14.3 and 15.1 and OPNsense's
     config followed. This is otherwise the same SMP config CI already builds
     against for 25.7/26.1: the `config -d`/`config -x` cross-check in
-    "Kernel build dir" below needs no 26.7-specific handling for it, but see
-    `needs_port` next.
-  - **`needs_port: true`:** the driver itself has not been built or run
-    against a FreeBSD 15.1 kernel. "Port the driver to 15.1 KPIs" remains
-    open work, this CI has never executed the 26.7 leg ("Nothing
-    FreeBSD-side has run" as of 2026-09-27), and a grep of `sys/` for
-    `__FreeBSD_version` finds only the one comment in `if_pppoe.c:3585-3587`
-    about build-id pinning, not an actual KPI compatibility gate. The field
-    is purely informational today: `status: experimental` plus
-    `continue-on-error` already keeps a 26.7 build/smoke failure from
-    blocking CI, and no script reads `needs_port` yet. Flip it to `false`
-    once a 26.7 build/smoke run (or the lab) has actually passed.
+    "Kernel build dir" below needs no 26.7-specific handling for it.
+  - **Driver on FreeBSD 15.1:** built and smoked by CI on every 26.7 kernel, and lab-verified on 26.7.4 (lab/vm/README.md "FreeBSD 15.1 client").
   - **Plugin PHP desk-check against 8.5** (2026-09-28, against
     php.net's [migration85.incompatible](https://www.php.net/manual/en/migration85.incompatible.php)
     and [migration85.deprecated](https://www.php.net/manual/en/migration85.deprecated.php)
