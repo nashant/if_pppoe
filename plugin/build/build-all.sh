@@ -329,8 +329,11 @@ EOF2
 	plugin_base=$(sed -n 's/^PLUGIN_VERSION=[[:space:]]*//p' "$PLUGIN_DIR/Makefile")
 	want_plugin=$plugin_base
 	[ "$PLUGIN_REVISION" = 0 ] || want_plugin="${plugin_base}_$PLUGIN_REVISION"
+	# Setting ABI alone makes pkg guess OSVERSION as <major>00000 and refuse
+	# the repo it just built ("wrong OS version"); this is only a resolve
+	# check against our own repo, so the OS version is not what's tested.
 	rpkg() {
-		PKG_DBDIR="$rc/db" INSTALL_AS_USER=yes pkg -R "$rc/repos" \
+		PKG_DBDIR="$rc/db" INSTALL_AS_USER=yes IGNORE_OSVERSION=yes pkg -R "$rc/repos" \
 			-o PKG_CACHEDIR="$rc/cache" -o ABI="$ABI" "$@"
 	}
 	rpkg update -f -r IfPppoeCheck || die "resolve check: pkg update from $REPO_DIR failed"
