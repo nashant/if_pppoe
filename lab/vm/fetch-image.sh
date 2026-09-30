@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Downloads the FreeBSD <VM_FREEBSD_REL>-RELEASE amd64 BASIC-CLOUDINIT qcow2
-# (14.3; 15.1 for build15) to the lab host (once), verifies its checksum, and
-# creates each VM name's own overlay qcow2 backed by it (size from
+# (14.3; 15.1 for build15 and LAB_CLIENT_IMAGE=15.1 clients) to the lab
+# host (once), verifies its checksum, and creates each VM name's own overlay qcow2 backed by it (size from
 # vm_config's VM_OVERLAY_SIZE). Args: VM names to create overlays for
 # (default: build client mpdsrv).
 set -euo pipefail
@@ -9,7 +9,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./common.sh
 
 freebsd_img_vars() {
-    IMG_BASE_URL="https://download.freebsd.org/releases/VM-IMAGES/$1-RELEASE/amd64/Latest"
+    # EOL releases move from download.freebsd.org to archive.freebsd.org's
+    # old-releases (as .github/scripts/smoke-vm.sh fetch_image does); the
+    # remote side below picks the first that serves CHECKSUM.SHA256.
+    IMG_REL_PATH="VM-IMAGES/$1-RELEASE/amd64/Latest"
+    IMG_BASE_URLS="https://download.freebsd.org/releases/$IMG_REL_PATH https://archive.freebsd.org/old-releases/$IMG_REL_PATH"
     IMG_XZ="FreeBSD-$1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
     IMG_QCOW2="${IMG_XZ%.xz}"
     # 14.3 keeps its original checksum file name; other releases get their own.
@@ -50,13 +54,19 @@ mkdir -p "\$HOME/$LAB_DIR/images"
 cd "\$HOME/$LAB_DIR/images"
 
 if [ ! -f "$IMG_QCOW2" ]; then
+    IMG_BASE_URL=""
+    for u in $IMG_BASE_URLS; do
+        if curl -fsSL --retry 3 -o /dev/null -r 0-0 "\$u/CHECKSUM.SHA256"; then IMG_BASE_URL="\$u"; break; fi
+    done
+    [ -n "\$IMG_BASE_URL" ] || { echo "no mirror serves $IMG_REL_PATH (tried: $IMG_BASE_URLS)" >&2; exit 1; }
+    echo "Using \$IMG_BASE_URL"
     if [ ! -f "$IMG_XZ" ]; then
         echo "Fetching $IMG_XZ ..."
-        curl -fSL -o "$IMG_XZ.part" "$IMG_BASE_URL/$IMG_XZ"
+        curl -fSL -o "$IMG_XZ.part" "\$IMG_BASE_URL/$IMG_XZ"
         mv "$IMG_XZ.part" "$IMG_XZ"
     fi
     echo "Fetching $IMG_SUMS ..."
-    curl -fSL -o "$IMG_SUMS.new" "$IMG_BASE_URL/CHECKSUM.SHA256"
+    curl -fSL -o "$IMG_SUMS.new" "\$IMG_BASE_URL/CHECKSUM.SHA256"
     mv "$IMG_SUMS.new" "$IMG_SUMS"
 
     want=\$(grep -F "($IMG_XZ)" "$IMG_SUMS" | awk '{print \$NF}')

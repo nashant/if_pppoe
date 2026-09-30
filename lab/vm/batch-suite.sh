@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # batch-suite.sh --slot N --rev <rev> --out <dir>
 #                [--variant SMP|SMPW] [--no-hardening] [--k EXPR]
+#                [--prebuilt-ko PATH [--prebuilt-bin DIR]]
 #
 # Deterministic, non-interactive: build-checks <rev>, builds+deploys+loads
 # its module on slot N, runs its own tests/functional full suite (CLIENT=
@@ -11,6 +12,12 @@
 # --k EXPR: restrict the suite to a `pytest -k EXPR` subset (smoke/debug use
 # only -- the normal run is the whole suite). Still runs hardening too unless
 # --no-hardening is also given.
+#
+# --prebuilt-ko PATH (or env LAB_PREBUILT_KO): test that already-built
+# if_pppoe.ko (e.g. CI's package build) instead of building <rev>'s: no
+# build-check, no module build; <rev> still supplies the tests and the
+# source-built client tools, --prebuilt-bin DIR (LAB_PREBUILT_BIN) prebuilt
+# pppoectl/pppoeparms/spppioctl. See job-common.sh module_prebuilt_deploy_load.
 #
 # --slot N: used AS GIVEN, never acquired/released via slot.sh (the
 # orchestrator may already hold it pinned) -- only a local job lock
@@ -27,8 +34,9 @@ source ./common.sh
 source ./job-common.sh
 
 SLOT="" REV="" OUTDIR="" VARIANT="SMP" NO_HARDENING=0 KEXPR=""
+PREBUILT_KO="${LAB_PREBUILT_KO:-}" PREBUILT_BIN="${LAB_PREBUILT_BIN:-}"
 usage() {
-    echo "usage: $0 --slot N --rev <rev> --out <dir> [--variant SMP|SMPW] [--no-hardening] [--k EXPR]" >&2
+    echo "usage: $0 --slot N --rev <rev> --out <dir> [--variant SMP|SMPW] [--no-hardening] [--k EXPR] [--prebuilt-ko PATH [--prebuilt-bin DIR]]" >&2
     exit 1
 }
 while [ $# -gt 0 ]; do
@@ -39,10 +47,16 @@ while [ $# -gt 0 ]; do
         --variant) VARIANT="$2"; shift 2 ;;
         --no-hardening) NO_HARDENING=1; shift ;;
         --k) KEXPR="$2"; shift 2 ;;
+        --prebuilt-ko) PREBUILT_KO="$2"; shift 2 ;;
+        --prebuilt-bin) PREBUILT_BIN="$2"; shift 2 ;;
         *) usage ;;
     esac
 done
 [ -n "$SLOT" ] && [ -n "$REV" ] && [ -n "$OUTDIR" ] || usage
+# Absolute only: this script has already cd'd to its own directory.
+for p in "$PREBUILT_KO" "$PREBUILT_BIN"; do
+    case "$p" in ""|/*) ;; *) echo "batch-suite: --prebuilt-ko/--prebuilt-bin must be absolute (got '$p')" >&2; exit 1 ;; esac
+done
 
 REPO_ROOT_CHECK="$(cd ../.. && pwd)"
 g -C "$REPO_ROOT_CHECK" rev-parse --verify --quiet "${REV}^{commit}" >/dev/null \
@@ -53,7 +67,7 @@ export KERNEL_VARIANT="$VARIANT"
 mkdir -p "$OUTDIR"
 OUTDIR="$(cd "$OUTDIR" && pwd)"
 exec > >(tee -a "$OUTDIR/run.log") 2>&1
-echo "batch-suite: slot=$SLOT rev=$REV variant=$VARIANT out=$OUTDIR no_hardening=$NO_HARDENING k='${KEXPR}'"
+echo "batch-suite: slot=$SLOT rev=$REV variant=$VARIANT out=$OUTDIR no_hardening=$NO_HARDENING k='${KEXPR}' prebuilt_ko='${PREBUILT_KO}' prebuilt_bin='${PREBUILT_BIN}'"
 date -u +%FT%TZ
 
 WITNESS_LINES_FILE="$OUTDIR/witness_lines.txt"
@@ -133,7 +147,9 @@ job_lock_acquire "$SLOT" || { VERDICT="lab-broken"; LAB_BROKEN_REASON="could not
 trap job_lock_release EXIT
 
 echo "== build-check: $REV =="
-if ./build-check.sh "$REV" >"$OUTDIR/build-check.log" 2>&1; then
+if [ -n "$PREBUILT_KO" ]; then
+    echo "skipped: testing prebuilt $PREBUILT_KO" | tee "$OUTDIR/build-check.log"
+elif ./build-check.sh "$REV" >"$OUTDIR/build-check.log" 2>&1; then
     :
 else
     tail -60 "$OUTDIR/build-check.log"
@@ -150,7 +166,14 @@ rev_export "$REV" "$TMPROOT/rev"
 ensure_client_up || { VERDICT="lab-broken"; LAB_BROKEN_REASON="client on slot $SLOT would not come up"; write_verdict 2; }
 
 echo "== build/deploy/load =="
-if module_build_deploy_load "$TMPROOT/rev" "rev" "$OUTDIR"; then
+if [ -n "$PREBUILT_KO" ]; then
+    if module_prebuilt_deploy_load "$PREBUILT_KO" "$PREBUILT_BIN" "$TMPROOT/rev" "$OUTDIR"; then
+        BUILD_OK=1
+    else
+        VERDICT="fail"; LAB_BROKEN_REASON="prebuilt deploy/load failed for $PREBUILT_KO"
+        write_verdict 1
+    fi
+elif module_build_deploy_load "$TMPROOT/rev" "rev" "$OUTDIR"; then
     BUILD_OK=1
 else
     VERDICT="fail"; LAB_BROKEN_REASON="module build/deploy/load failed for $REV"

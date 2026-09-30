@@ -226,9 +226,42 @@ BUILD_CHECK_VM=build15 ./build-check.sh       # kmod (SMP only) + pppoectl + too
 ```
 
 `KERNCONF=SMPW` works the same way (add `BUILD_CHECK_SMPW=1` to build-check it).
-Unverified until the first run: the 15.1 cloud image's cloud-init (nuageinit)
-honouring run.sh's seed, and `echo | su -m root` working in it as on 14.3.
+The 15.1 cloud image's nuageinit honours run.sh's cidata seed (hostname, user,
+key, wheel, growpart) and `echo | su -m root` works as on 14.3 (verified on
+the 15.1 client below, 2026-09-30).
 `../syntax/kmod-syntax.sh` is a no-VM header check against any `sys/` tree.
+
+## FreeBSD 15.1 client (OPNsense 26.7 live verification)
+
+`LAB_CLIENT_IMAGE=15.1` gives a slot's client its own FreeBSD 15.1 disk
+(`client<N>-fbsd15.qcow2`, own overlay and `.golden`) in place of the 14.3
+one, which is left untouched. Everything else (name, ssh port, taps, MACs,
+bridge, pidfile, serial log) is the slot client's, so the harness and job
+scripts need no changes; run.sh records the booted disk in
+`run<-slotN>/<name>.disk` and refuses `up`/snapshot ops for the other disk
+while one is running. Export the variable for every run.sh/job call.
+
+```
+export LAB_SLOT=2
+./run.sh client2 down                                     # the 14.3 disk
+export LAB_CLIENT_IMAGE=15.1
+./fetch-image.sh client                                   # 15.1 image + client2-fbsd15.qcow2
+LAB_VHOST=1 LAB_NET_QUEUES=4 ./run.sh client2 up
+KERNEL_SET_URL=https://pkg.opnsense.org/FreeBSD:15:amd64/26.7/sets/kernel-26.7.4-amd64.txz \
+KERNEL_SET_SHA256=<sha256 from kernels.json> \
+KERNEL_BUILD_ID=e3ff5e8976813d0dc02c740db36bb588fabc1fd9 ./provision-client.sh
+./run.sh client2 snapshot-save                            # known-good for recovery
+# CI's .ko (package /usr/local/lib/if_pppoe/<build_id>/) instead of a lab build:
+./batch-suite.sh --slot 2 --rev HEAD --out /abs/out --prebuilt-ko /abs/<build_id>/if_pppoe.ko \
+    --prebuilt-bin /abs/bin --k '...'
+./run.sh client2 down; unset LAB_CLIENT_IMAGE             # then the 14.3 disk back:
+LAB_VHOST=1 LAB_NET_QUEUES=4 ./run.sh client2 up
+```
+
+`provision-client.sh` in kernel-set mode installs the set as
+`/boot/kernel.<build_id>` (loader.conf `kernel=`) and asserts `kern.build_id`.
+A release .ko has no `PPPOE_TEST_REFLECT`, so deselect
+`test_reflected_frame_comes_back_with_the_right_pppoe_header` with it.
 
 ## Networking
 

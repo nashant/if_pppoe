@@ -6,6 +6,13 @@
 # PPPoE client (labels: lab -> accel-ppp, mpdlab -> mpdsrv), plus the
 # driver's userland tools. Requires `run.sh build up` and `run.sh client up`
 # first. LAB_SLOT=N provisions that slot's client<N>.
+#
+# KERNEL_SET_URL + KERNEL_SET_SHA256 + KERNEL_BUILD_ID: instead of a
+# lab-built kernel, install an official OPNsense kernel set (e.g.
+# https://pkg.opnsense.org/FreeBSD:15:amd64/26.7/sets/kernel-26.7.4-amd64.txz)
+# as /boot/kernel.<build_id> and assert kern.build_id after the reboot --
+# the LAB_CLIENT_IMAGE=15.1 client (README "FreeBSD 15.1 client"). No build
+# VM needed. The set is fetched once to $VMHOST:$LAB_DIR/kernel-sets/.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./common.sh
@@ -15,6 +22,46 @@ NAME=client
 vm_config "$NAME"
 remote() { vm_ssh "$NAME" sh -s; }
 
+# write_loader_conf <kernel-dir-name>: boot that /boot/<name> (stock /boot/kernel stays the fallback).
+write_loader_conf() {
+    remote <<EOF
+set -eu
+asroot() { echo | su -m root -c "\$*"; }
+asroot sysrc -f /boot/loader.conf kernel=$1
+# netisr: one bound thread per vCPU, as on the DUT (client-repair.md notes;
+# boot-time tunables, so they take effect with the reboot below).
+# (sysrc rejects dotted names, so edit loader.conf directly, idempotently.)
+asroot "sed -i '' -e '/^net\.isr\.maxthreads=/d' -e '/^net\.isr\.bindthreads=/d' /boot/loader.conf && printf 'net.isr.maxthreads=\"%s\"\nnet.isr.bindthreads=\"1\"\n' $VM_VCPUS >> /boot/loader.conf"
+# Pin the rc.conf settings ssh reachability depends on: a power-cut once
+# truncated rc.conf to 0 bytes and the VM came back with no sshd/no vtnet0 IP.
+# vtnet1 is raw PPPoE only: "up", never DHCP (ifconfig_DEFAULT) on the lab bridge.
+asroot sysrc ifconfig_vtnet0=DHCP sshd_enable=YES ifconfig_vtnet1=up
+cat /boot/loader.conf
+EOF
+}
+
+reboot_client() {
+    remote <<'EOF'
+set -eu
+echo | su -m root -c "shutdown -r now" >/dev/null 2>&1 || true
+EOF
+    echo -n "Waiting for client to come back up "
+    sleep 5
+    local tries=0
+    until vm_ssh "$NAME" true 2>/dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge 150 ]; then
+            echo
+            echo "Timed out waiting for client ssh after reboot." >&2
+            exit 1
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo " up."
+}
+
+if [ -z "${KERNEL_SET_URL:-}" ]; then
 echo "=== [1/6] $KERNEL_VARIANT kernel -> client:/boot/kernel.$KERNEL_VARIANT ==="
 # Compares a sha256 of the build VM's kernel binary against a marker left
 # on the client at copy time (existence alone can't detect a rebuild); set
@@ -50,20 +97,7 @@ echo "kernel.$KERNEL_VARIANT: \$(ls /boot/kernel.$KERNEL_VARIANT/*.ko | wc -l | 
 EOF
 
 echo "=== [2/6] /boot/loader.conf: kernel=kernel.$KERNEL_VARIANT (stock /boot/kernel kept as fallback) ==="
-remote <<EOF
-set -eu
-asroot() { echo | su -m root -c "\$*"; }
-asroot sysrc -f /boot/loader.conf kernel=kernel.$KERNEL_VARIANT
-# netisr: one bound thread per vCPU, as on the DUT (client-repair.md notes;
-# boot-time tunables, so they take effect with the reboot below).
-# (sysrc rejects dotted names, so edit loader.conf directly, idempotently.)
-asroot "sed -i '' -e '/^net\.isr\.maxthreads=/d' -e '/^net\.isr\.bindthreads=/d' /boot/loader.conf && printf 'net.isr.maxthreads=\"%s\"\nnet.isr.bindthreads=\"1\"\n' $VM_VCPUS >> /boot/loader.conf"
-# Pin the rc.conf settings ssh reachability depends on: a power-cut once
-# truncated rc.conf to 0 bytes and the VM came back with no sshd/no vtnet0 IP.
-# vtnet1 is raw PPPoE only: "up", never DHCP (ifconfig_DEFAULT) on the lab bridge.
-asroot sysrc ifconfig_vtnet0=DHCP sshd_enable=YES ifconfig_vtnet1=up
-cat /boot/loader.conf
-EOF
+write_loader_conf "kernel.$KERNEL_VARIANT"
 echo "  (fallback to stock kernel: at the loader prompt — interrupt autoboot,"
 echo "  e.g. first 'sysrc -f /boot/loader.conf autoboot_delay=10' — run"
 echo "  'unset kernel' then 'boot', or 'boot kernel', per loader(8). Not"
@@ -77,24 +111,7 @@ case "$ALREADY_IDENT:$ALREADY_ISR" in
         ;;
     *)
         echo "=== [3/6] rebooting client onto kernel.$KERNEL_VARIANT ==="
-        remote <<'EOF'
-set -eu
-echo | su -m root -c "shutdown -r now" >/dev/null 2>&1 || true
-EOF
-        echo -n "Waiting for client to come back up "
-        sleep 5
-        tries=0
-        until vm_ssh "$NAME" true 2>/dev/null; do
-            tries=$((tries + 1))
-            if [ "$tries" -ge 150 ]; then
-                echo
-                echo "Timed out waiting for client ssh after reboot." >&2
-                exit 1
-            fi
-            echo -n "."
-            sleep 2
-        done
-        echo " up."
+        reboot_client
         ;;
 esac
 
@@ -134,6 +151,49 @@ if [ "$KERNEL_VARIANT" != "SMP" ]; then
         exit 1
     }
     echo "OK: debug.witness.watch and debug.witness.trace present"
+fi
+else
+KSET_NAME="kernel.$KERNEL_BUILD_ID"
+echo "=== [1/6] OPNsense kernel set $KERNEL_SET_URL -> client:/boot/$KSET_NAME ==="
+case "$KERNEL_BUILD_ID" in *[!0-9a-f]*|"") echo "KERNEL_BUILD_ID must be a hex build_id" >&2; exit 1 ;; esac
+[ -n "${KERNEL_SET_SHA256:-}" ] || { echo "KERNEL_SET_SHA256 is required with KERNEL_SET_URL" >&2; exit 1; }
+R_SET="\$HOME/$LAB_DIR/kernel-sets/$KERNEL_BUILD_ID.txz"
+host_ssh bash -s <<EOF
+set -euo pipefail
+mkdir -p "\$HOME/$LAB_DIR/kernel-sets"
+f="$R_SET"
+if [ ! -f "\$f" ] || [ "\$(sha256sum "\$f" | awk '{print \$1}')" != "$KERNEL_SET_SHA256" ]; then
+    curl -fSL --retry 3 -o "\$f.part" "$KERNEL_SET_URL"
+    mv "\$f.part" "\$f"
+fi
+got=\$(sha256sum "\$f" | awk '{print \$1}')
+[ "\$got" = "$KERNEL_SET_SHA256" ] || { echo "kernel set sha256 \$got != $KERNEL_SET_SHA256" >&2; rm -f "\$f"; exit 1; }
+echo "kernel set OK: \$got"
+EOF
+if [ -n "${FORCE:-}" ] || ! vm_ssh "$NAME" "test -f /boot/$KSET_NAME/kernel"; then
+    host_ssh "cat $R_SET" | vm_ssh "$NAME" 'cat > /tmp/kset.txz'
+    remote <<EOF
+set -eu
+echo | su -m root -c "rm -rf /tmp/kset /boot/$KSET_NAME && mkdir -p /tmp/kset && tar -xf /tmp/kset.txz -C /tmp/kset && mv /tmp/kset/boot/kernel /boot/$KSET_NAME && rm -rf /tmp/kset /tmp/kset.txz"
+EOF
+else
+    echo "/boot/$KSET_NAME present, skipping copy. Set FORCE=1 to re-copy."
+fi
+
+echo "=== [2/6] /boot/loader.conf: kernel=$KSET_NAME (stock /boot/kernel kept as fallback) ==="
+write_loader_conf "$KSET_NAME"
+
+if [ "$(vm_ssh "$NAME" 'echo "$(sysctl -n kern.build_id):$(sysctl -n net.isr.maxthreads)"' 2>/dev/null || true)" = "$KERNEL_BUILD_ID:$VM_VCPUS" ]; then
+    echo "=== [3/6] already booted on $KSET_NAME, skipping reboot ==="
+else
+    echo "=== [3/6] rebooting client onto $KSET_NAME ==="
+    reboot_client
+fi
+echo "=== asserting the booted kernel is build_id $KERNEL_BUILD_ID ==="
+vm_ssh "$NAME" 'echo "uname -v: $(uname -v)"; echo "kern.bootfile: $(sysctl -n kern.bootfile)"'
+HAVE_BID="$(vm_ssh "$NAME" sysctl -n kern.build_id)"
+[ "$HAVE_BID" = "$KERNEL_BUILD_ID" ] || { echo "FAIL: kern.build_id $HAVE_BID != $KERNEL_BUILD_ID" >&2; exit 1; }
+echo "OK: kern.build_id = $HAVE_BID"
 fi
 
 echo "=== [4/6] pkg install mpd5 iperf3 ==="
