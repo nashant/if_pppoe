@@ -39,8 +39,8 @@ R_IMG="\$HOME/$LAB_DIR/images"
 # throwaway overlay $NAME-run.qcow2 backed by it. Never boot the base image
 # directly (e.g. with an older run.sh) while the overlay exists — that
 # silently corrupts the overlay.
-OVL="$NAME-run.qcow2"
-MARK="$NAME.golden"
+OVL="$VM_DISK_ID-run.qcow2"
+MARK="$VM_DISK_ID.golden"
 
 pubkey_file() {
     if [ -n "${SSH_PUBKEY_FILE:-}" ]; then echo "$SSH_PUBKEY_FILE"
@@ -121,8 +121,17 @@ EOF
     echo "-netdev tap,id=$id,ifname=$tap,script=no,downscript=no$nd_opts -device virtio-net-pci,netdev=$id,mac=$mac$dev_opts"
 }
 
+running_disk() {  # disk id the running instance booted (pre-VM_DISK_ID launches: $NAME)
+    host_ssh "cat \"$R_RUN/$NAME.disk\" 2>/dev/null || echo \"$NAME\""
+}
+
 cmd_up() {
     if is_running; then
+        local cur; cur="$(running_disk)"
+        if [ "$cur" != "$VM_DISK_ID" ]; then
+            echo "$NAME is running on disk '$cur', not '$VM_DISK_ID' (LAB_CLIENT_IMAGE=${LAB_CLIENT_IMAGE:-}); run.sh $NAME down first" >&2
+            return 1
+        fi
         echo "$NAME already running (pidfile present)."
         return 0
     fi
@@ -257,6 +266,7 @@ serial="\$RUN/$NAME.serial.log"
 # separates launches.
 sudo rm -f "\$RUN/$VM_CONSOLE_SOCK" "\$RUN/$VM_MONITOR_SOCK"
 echo "=== run.sh: $NAME launched \$(date -u +%FT%TZ) drive=\$DRIVE ===" | sudo tee -a "\$serial" >/dev/null
+echo "$VM_DISK_ID" > "\$RUN/$NAME.disk"
 
 # LAB_THROTTLE_QUOTA (e.g. 180): launch qemu inside a systemd CPUQuota
 # service — the DUT's aggregate CPU is capped from boot, with NO process
@@ -348,7 +358,7 @@ alive() { [ -n "\$pid" ] && sudo kill -0 "\$pid" 2>/dev/null; }
 waitdead() { local i; for i in \$(seq 1 "\$1"); do alive || return 0; sleep 1; done; ! alive; }
 moncmd() { [ -S "\$mon" ] && printf '%s\n' "\$1" | sudo timeout 10 nc -U -q 1 "\$mon" >/dev/null 2>&1; }
 cleanup() {
-    sudo rm -f "\$f" "\$RUN/$NAME.quota" "\$RUN/$VM_CONSOLE_SOCK" "\$mon"
+    sudo rm -f "\$f" "\$RUN/$NAME.quota" "\$RUN/$NAME.disk" "\$RUN/$VM_CONSOLE_SOCK" "\$mon"
     sudo systemctl stop lab-qemu-$NAME.service 2>/dev/null || true
 }
 
@@ -356,7 +366,7 @@ if [ -z "\$pid" ]; then
     # quota-launched VM without pidfile: stop the systemd unit (graceful
     # guest shutdown already attempted above)
     sudo systemctl stop lab-qemu-$NAME.service 2>/dev/null || true
-    sudo rm -f "\$RUN/$NAME.quota"
+    sudo rm -f "\$RUN/$NAME.quota" "\$RUN/$NAME.disk"
     echo "$NAME stopped (no pidfile)."
     exit 0
 fi
@@ -480,6 +490,11 @@ cmd_reset_clean() {
 
 need_snapshot_vm() {
     [ "$VM_SNAPSHOT" = 1 ] || { echo "$NAME: snapshots are only supported on client VMs" >&2; exit 1; }
+    # The overlay/marker are per disk: never stop (and later fold) the OTHER disk's instance.
+    if is_running && [ "$(running_disk)" != "$VM_DISK_ID" ]; then
+        echo "$NAME is running on disk '$(running_disk)', not '$VM_DISK_ID'; refusing to snapshot the wrong disk" >&2
+        exit 1
+    fi
 }
 
 cmd_snapshot_save() {

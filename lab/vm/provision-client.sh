@@ -6,6 +6,13 @@
 # PPPoE client (labels: lab -> accel-ppp, mpdlab -> mpdsrv), plus the
 # driver's userland tools. Requires `run.sh build up` and `run.sh client up`
 # first. LAB_SLOT=N provisions that slot's client<N>.
+#
+# KERNEL_SET_URL + KERNEL_SET_SHA256 + KERNEL_BUILD_ID: instead of a
+# lab-built kernel, install an official OPNsense kernel set (e.g.
+# https://pkg.opnsense.org/FreeBSD:15:amd64/26.7/sets/kernel-26.7.4-amd64.txz)
+# as /boot/kernel.<build_id> and assert kern.build_id after the reboot --
+# the LAB_CLIENT_IMAGE=15.1 client (README "FreeBSD 15.1 client"). No build
+# VM needed. The set is fetched once to $VMHOST:$LAB_DIR/kernel-sets/.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./common.sh
@@ -15,6 +22,7 @@ NAME=client
 vm_config "$NAME"
 remote() { vm_ssh "$NAME" sh -s; }
 
+if [ -z "${KERNEL_SET_URL:-}" ]; then
 echo "=== [1/6] $KERNEL_VARIANT kernel -> client:/boot/kernel.$KERNEL_VARIANT ==="
 # Compares a sha256 of the build VM's kernel binary against a marker left
 # on the client at copy time (existence alone can't detect a rebuild); set
@@ -134,6 +142,64 @@ if [ "$KERNEL_VARIANT" != "SMP" ]; then
         exit 1
     }
     echo "OK: debug.witness.watch and debug.witness.trace present"
+fi
+else
+KSET_NAME="kernel.$KERNEL_BUILD_ID"
+echo "=== [1/6] OPNsense kernel set $KERNEL_SET_URL -> client:/boot/$KSET_NAME ==="
+case "$KERNEL_BUILD_ID" in *[!0-9a-f]*|"") echo "KERNEL_BUILD_ID must be a hex build_id" >&2; exit 1 ;; esac
+[ -n "${KERNEL_SET_SHA256:-}" ] || { echo "KERNEL_SET_SHA256 is required with KERNEL_SET_URL" >&2; exit 1; }
+R_SET="\$HOME/$LAB_DIR/kernel-sets/$KERNEL_BUILD_ID.txz"
+host_ssh bash -s <<EOF
+set -euo pipefail
+mkdir -p "\$HOME/$LAB_DIR/kernel-sets"
+f="$R_SET"
+if [ ! -f "\$f" ] || [ "\$(sha256sum "\$f" | awk '{print \$1}')" != "$KERNEL_SET_SHA256" ]; then
+    curl -fSL --retry 3 -o "\$f.part" "$KERNEL_SET_URL"
+    mv "\$f.part" "\$f"
+fi
+got=\$(sha256sum "\$f" | awk '{print \$1}')
+[ "\$got" = "$KERNEL_SET_SHA256" ] || { echo "kernel set sha256 \$got != $KERNEL_SET_SHA256" >&2; rm -f "\$f"; exit 1; }
+echo "kernel set OK: \$got"
+EOF
+if [ -n "${FORCE:-}" ] || ! vm_ssh "$NAME" "test -f /boot/$KSET_NAME/kernel"; then
+    host_ssh "cat $R_SET" | vm_ssh "$NAME" 'cat > /tmp/kset.txz'
+    remote <<EOF
+set -eu
+echo | su -m root -c "rm -rf /tmp/kset /boot/$KSET_NAME && mkdir -p /tmp/kset && tar -xf /tmp/kset.txz -C /tmp/kset && mv /tmp/kset/boot/kernel /boot/$KSET_NAME && rm -rf /tmp/kset /tmp/kset.txz"
+EOF
+else
+    echo "/boot/$KSET_NAME present, skipping copy. Set FORCE=1 to re-copy."
+fi
+
+echo "=== [2/6] /boot/loader.conf: kernel=$KSET_NAME (stock /boot/kernel kept as fallback) ==="
+remote <<EOF
+set -eu
+asroot() { echo | su -m root -c "\$*"; }
+asroot sysrc -f /boot/loader.conf kernel=$KSET_NAME
+asroot "sed -i '' -e '/^net\.isr\.maxthreads=/d' -e '/^net\.isr\.bindthreads=/d' /boot/loader.conf && printf 'net.isr.maxthreads=\"%s\"\nnet.isr.bindthreads=\"1\"\n' $VM_VCPUS >> /boot/loader.conf"
+asroot sysrc ifconfig_vtnet0=DHCP sshd_enable=YES ifconfig_vtnet1=up
+cat /boot/loader.conf
+EOF
+
+if [ "$(vm_ssh "$NAME" sysctl -n kern.build_id 2>/dev/null || true):$(vm_ssh "$NAME" sysctl -n net.isr.maxthreads 2>/dev/null || true)" = "$KERNEL_BUILD_ID:$VM_VCPUS" ]; then
+    echo "=== [3/6] already booted on $KSET_NAME, skipping reboot ==="
+else
+    echo "=== [3/6] rebooting client onto $KSET_NAME ==="
+    echo | vm_ssh "$NAME" 'su -m root -c "shutdown -r now"' >/dev/null 2>&1 || true
+    sleep 10
+    tries=0
+    until vm_ssh "$NAME" true 2>/dev/null; do
+        tries=$((tries + 1))
+        [ "$tries" -lt 150 ] || { echo "Timed out waiting for client ssh after reboot." >&2; exit 1; }
+        sleep 2
+    done
+fi
+echo "=== asserting the booted kernel is build_id $KERNEL_BUILD_ID ==="
+echo "uname -v: $(vm_ssh "$NAME" uname -v)"
+echo "kern.bootfile: $(vm_ssh "$NAME" sysctl -n kern.bootfile)"
+HAVE_BID="$(vm_ssh "$NAME" sysctl -n kern.build_id)"
+[ "$HAVE_BID" = "$KERNEL_BUILD_ID" ] || { echo "FAIL: kern.build_id $HAVE_BID != $KERNEL_BUILD_ID" >&2; exit 1; }
+echo "OK: kern.build_id = $HAVE_BID"
 fi
 
 echo "=== [4/6] pkg install mpd5 iperf3 ==="

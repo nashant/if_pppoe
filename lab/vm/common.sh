@@ -253,6 +253,25 @@ vm_config() {
         if [ -n "$VM_VIRTFS_DIR" ]; then VM_VIRTFS_DIR="$VM_VIRTFS_DIR-slot$VM_SLOT"; fi
         if [ -n "$VM_FWD_CLI" ]; then VM_FWD_CLI=$(( VM_FWD_CLI + off )); fi
     fi
+    # VM_DISK_ID: stem of the VM's own disk files (base image, seed ISO, and
+    # run.sh's snapshot overlay/marker). Same as VM_NAME unless a disk
+    # variant below swaps the disk while keeping everything else.
+    VM_DISK_ID="$VM_NAME"
+    # LAB_CLIENT_IMAGE=15.1: the client boots its own FreeBSD 15.1 disk
+    # (<name>-fbsd15.qcow2) instead of the 14.3 one; everything else (port,
+    # MACs, pidfile, serial log) is shared -- README "FreeBSD 15.1 client".
+    case "${LAB_CLIENT_IMAGE:-}" in
+        ""|14.3) ;;
+        15.1)
+            if [ "$name" = client ]; then
+                VM_FREEBSD_REL="15.1"
+                VM_DISK_ID="$VM_NAME-fbsd15"
+                VM_BASE_IMAGE="$VM_DISK_ID.qcow2"
+                VM_SEED_ISO="$VM_DISK_ID-seed.iso"
+            fi
+            ;;
+        *) echo "vm_config: LAB_CLIENT_IMAGE must be empty, 14.3 or 15.1 (got '$LAB_CLIENT_IMAGE')" >&2; return 1 ;;
+    esac
     # Socket basenames, relative to $LAB_DIR/$VM_RUN_DIR on $VMHOST.
     VM_CONSOLE_SOCK="$VM_NAME.serial.sock"
     VM_MONITOR_SOCK="$VM_NAME.monitor.sock"

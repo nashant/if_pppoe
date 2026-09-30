@@ -128,6 +128,40 @@ module_build_deploy_load() {
         tail -40 "$logdir/tools-$label.log" >&2; return 1; }
 }
 
+# module_prebuilt_deploy_load <ko> <bindir> <srcdir> <logdir>: ship a prebuilt
+# .ko to the client's /tmp/if_pppoe.ko (where the harness kldloads it); a
+# build_id file beside it must match kern.build_id. spppauth is never taken
+# from <bindir>: the harness needs test_pap_live's positional helper, not tools/spppauth.
+module_prebuilt_deploy_load() {
+    local ko="$1" bindir="$2" srcdir="$3" logdir="$4" want have b
+    [ -f "$ko" ] || { echo "module_prebuilt_deploy_load: no such .ko: $ko" >&2; return 1; }
+    if [ -f "$(dirname -- "$ko")/build_id" ]; then
+        want="$(tr -d '[:space:]' < "$(dirname -- "$ko")/build_id")"
+        have="$(vm_ssh client sysctl -n kern.build_id)"
+        [ "$want" = "$have" ] || {
+            echo "module_prebuilt_deploy_load: $ko is for build_id $want, client runs $have" >&2; return 1; }
+        echo "prebuilt: build_id $want matches the client kernel" >&2
+    fi
+    echo "prebuilt: $ko sha256 $(sha256sum "$ko" | awk '{print $1}')" | tee "$logdir/deploy-prebuilt.log" >&2
+    vm_ssh client 'cat > /tmp/if_pppoe.ko' < "$ko"
+    ensure_module_unloaded
+    ./build-module.sh load if_pppoe.ko >"$logdir/load-prebuilt.log" 2>&1 || {
+        echo "module_prebuilt_deploy_load: load failed" >&2
+        tail -40 "$logdir/load-prebuilt.log" >&2; return 1; }
+    TOOLS_SRC_ROOT="$srcdir" ./install-client-tools.sh >"$logdir/tools-prebuilt.log" 2>&1 || {
+        echo "module_prebuilt_deploy_load: client tools install failed" >&2
+        tail -40 "$logdir/tools-prebuilt.log" >&2; return 1; }
+    if [ -n "$bindir" ]; then
+        for b in pppoectl pppoeparms spppioctl; do
+            [ -f "$bindir/$b" ] || continue
+            vm_ssh client "cat > /tmp/prebuilt-$b" < "$bindir/$b"
+            echo | vm_ssh client "su -m root -c 'install -m 0555 /tmp/prebuilt-$b /usr/local/sbin/$b && rm -f /tmp/prebuilt-$b'"
+            echo "prebuilt: /usr/local/sbin/$b <- $bindir/$b ($(sha256sum "$bindir/$b" | awk '{print $1}'))" \
+                | tee -a "$logdir/tools-prebuilt.log" >&2
+        done
+    fi
+}
+
 # -------------------------------------------------------- VM up / recovery
 ensure_client_up() {
     vm_ssh client true >/dev/null 2>&1 && return 0
