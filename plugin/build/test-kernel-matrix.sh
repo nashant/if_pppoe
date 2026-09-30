@@ -11,6 +11,9 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 DISCOVER="$HERE/discover-kernels.sh"
 FAIL=0
+# Plugin version under test (release.yml requires tag == PLUGIN_VERSION).
+PV=$(sed -n 's/^PLUGIN_VERSION=[[:space:]]*//p' "$HERE/../net/if-pppoe/Makefile")
+PVR="${PV}_3"  # a kernel-only refresh (PLUGIN_REVISION=3) of it
 pass() { echo "ok - kernel-matrix: $*"; }
 fail() { echo "FAIL - kernel-matrix: $*"; FAIL=1; }
 
@@ -299,7 +302,7 @@ run_build_all() {
 		--abi FreeBSD:14:amd64 --cache "$T/kbcache" --out "$T/out" "$@"
 }
 
-if run_build_all --phase kmods --version 0.4_3 > "$T/kmods.log" 2>&1; then
+if run_build_all --phase kmods --version "${PVR}" > "$T/kmods.log" 2>&1; then
 	pass "build-all.sh --phase kmods runs"
 else
 	fail "build-all.sh --phase kmods failed:"; sed 's/^/    /' "$T/kmods.log"
@@ -328,7 +331,7 @@ grep -q "generated from the published kernel's embedded config" "$T/kmods.log" &
 if env STUB_CONFIG_NEED='# tools config' BUILD_ALL_WORK="$T/work-fb" PATH="$STUBS:$PATH" \
 	TOOLS_RAW="file://$T/tools" SRC_REPO="file:///nonexistent" DRIFT_TAGS="25.7" \
 	sh "$R/plugin/build/build-all.sh" --kernels-json "$KD/kernels.json" --abi FreeBSD:14:amd64 \
-	--cache "$T/kbcache-fb" --out "$T/out-fb" --phase kmods --version 0.4_3 > "$T/kmods-fb.log" 2>&1 &&
+	--cache "$T/kbcache-fb" --out "$T/out-fb" --phase kmods --version "${PVR}" > "$T/kmods-fb.log" 2>&1 &&
 	grep -q 'embedded config not usable by config -d; trying opnsense/tools' "$T/kmods-fb.log"; then
 	pass "unusable embedded config falls back to the opnsense/tools config"
 else
@@ -343,19 +346,19 @@ for tag in 26.1 26.1.3 26.1.7 26.1.r1 26.7; do
 	mkdir -p "$TT/$tag/config/$d"
 	echo "conf of $tag" > "$TT/$tag/config/$d/SMP"
 done
-tc() { (TOOLS_RAW="file://$TT"; . "$HERE/lib/kbuild.sh"; kb_tools_config "$1" "$2" SMP "$T/tc.conf") 2>/dev/null; }
+tc() { (export TOOLS_RAW="file://$TT"; . "$HERE/lib/kbuild.sh"; kb_tools_config "$1" "$2" SMP "$T/tc.conf") 2>/dev/null; }
 [ "$(tc 26.1.7 26.1)" = 26.1.7 ] && pass "tools config: exact tag" || fail "tools config: exact tag -> '$(tc 26.1.7 26.1)'"
 [ "$(tc 26.1.6 26.1)" = 26.1.3 ] && grep -q 'conf of 26.1.3' "$T/tc.conf" &&
 	pass "tools config: untagged 26.1.6 falls back to 26.1.3" || fail "tools config: 26.1.6 -> '$(tc 26.1.6 26.1)'"
 [ "$(tc 26.1.2 26.1)" = 26.1 ] && pass "tools config: 26.1.2 falls back to 26.1" || fail "tools config: 26.1.2 -> '$(tc 26.1.2 26.1)'"
 if tc 25.7.9 25.7 > /dev/null; then fail "tools config: 25.7.9 used another series' config"; else pass "tools config: no same-series tag fails"; fi
 : > "$STUB_LOG"
-run_build_all --phase kmods --version 0.4_3 > "$T/kmods2.log" 2>&1 || fail "warm kmods run failed"
+run_build_all --phase kmods --version "${PVR}" > "$T/kmods2.log" 2>&1 || fail "warm kmods run failed"
 if grep -q 'git clone' "$STUB_LOG"; then fail "warm cache cloned again"; else pass "warm cache reuses the kernel build dirs"; fi
 
 jq -r '.[].build_id' "$KD/kernels.json" | grep -v "$(bid_of 25.7.2)" > "$T/pass.txt"
 : > "$STUB_LOG"
-if run_build_all --phase package --version 0.4_3 --pass-build-ids "$T/pass.txt" > "$T/pkg.log" 2>&1; then
+if run_build_all --phase package --version "${PVR}" --pass-build-ids "$T/pass.txt" > "$T/pkg.log" 2>&1; then
 	pass "build-all.sh --phase package runs"
 else
 	fail "build-all.sh --phase package failed:"; sed 's/^/    /' "$T/pkg.log"
@@ -370,22 +373,22 @@ else
 fi
 n=$(grep -c 'if-pppoe-kmod stage-prebuilt' "$STUB_LOG" || true)
 [ "$n" = 3 ] && pass "package phase stages prebuilt .kos only" || fail "stage-prebuilt ran $n times"
-if [ -f "$T/out/pkg/if-pppoe-kmod-0.4_3.pkg" ] && [ -f "$T/out/pkg/os-if-pppoe-0.4_3.pkg" ] &&
+if [ -f "$T/out/pkg/if-pppoe-kmod-${PVR}.pkg" ] && [ -f "$T/out/pkg/os-if-pppoe-${PVR}.pkg" ] &&
 	grep -q 'if-pppoe package BUILD_ID= KMOD_MAKE_ARGS= PLUGIN_REVISION=3' "$STUB_LOG"; then
-	pass "0.4_3 bumps both packages (PLUGIN_REVISION=3)"
+	pass "${PVR} bumps both packages (PLUGIN_REVISION=3)"
 else
 	fail "refresh versions"
 fi
-grep -q 'ok: os-if-pppoe-0.4_3 pulls if-pppoe-kmod-0.4_3' "$T/pkg.log" && [ -f "$T/out/repo.tar.gz" ] &&
+grep -q "ok: os-if-pppoe-${PVR} pulls if-pppoe-kmod-${PVR}" "$T/pkg.log" && [ -f "$T/out/repo.tar.gz" ] &&
 	pass "resolve check and flat repo tarball" || fail "resolve check / repo.tar.gz"
 
-if run_build_all --phase package --version 0.4_3 --plugin-revision 2 > "$T/bad1.log" 2>&1; then
-	fail "--plugin-revision 2 with --version 0.4_3 accepted"
+if run_build_all --phase package --version "${PVR}" --plugin-revision 2 > "$T/bad1.log" 2>&1; then
+	fail "--plugin-revision 2 with --version ${PVR} accepted"
 else
 	pass "--plugin-revision must agree with the version's _N"
 fi
 echo 0000000000000000000000000000000000000000 > "$T/nopass.txt"
-if run_build_all --phase package --version 0.4 --pass-build-ids "$T/nopass.txt" > "$T/bad2.log" 2>&1; then
+if run_build_all --phase package --version "$PV" --pass-build-ids "$T/nopass.txt" > "$T/bad2.log" 2>&1; then
 	fail "an empty pass list produced a package"
 else
 	grep -q 'no build_id left' "$T/bad2.log" && pass "nothing passing means no package" || fail "empty pass list message"
