@@ -321,11 +321,15 @@ dir. Per group:
 
 1. A blobless, depth-1, sparse clone of `opnsense/src@<src_tag>` of the
    group's newest member, with only `sys/` checked out.
-2. `config/<series>/<kernconf>` fetched from `opnsense/tools@<src_tag>`
-   (the tag the kernel set was built from, and the same tag
-   `lab/vm/build-kernel.sh` uses; `<core_tag>` is only a fallback when tools
-   has no such tag), with the `%%DEBUG%%` line stripped the same way the lab
-   does. Then `config -d $KBD <kernconf>`. config(8) writes every
+2. The config(8) input, most exact first: the published kernel's own
+   embedded config (its `kern_conf` section, what `config -x` prints),
+   copied into `sys/amd64/conf/<kernconf>`; if config(8) rejects it,
+   `config/<series>/<kernconf>` from `opnsense/tools@<src_tag>` (the tag
+   `lab/vm/build-kernel.sh` uses), else from the newest tools tag of the
+   same series that is <= `<src_tag>` (tools is not tagged for every
+   kernel-only patch release, e.g. 26.1.6), with the `%%DEBUG%%` line
+   stripped the same way the lab does. Never tools `master` or another
+   series. Then `config -d $KBD <kernconf>`. config(8) writes every
    `opt_*.h`. The kmod consumes those through `KERNBUILDDIR`: FreeBSD's
    `sys/conf/kmod.mk` adds `-include ${KERNBUILDDIR}/opt_global.h` and
    symlinks each `opt_*.h` in `SRCS` from `KERNBUILDDIR`. The module never
@@ -339,7 +343,9 @@ dir. Per group:
    `${KERNBUILDDIR}/kernel`, and the boot hook keys the `.ko` directory on
    it. A locally built kernel would not match any user's kernel.
 4. Cross-check, per member: `config -d` on the member's own embedded config
-   must produce `opt_*.h` byte-identical to the group's from step 2. This is
+   must produce `opt_*.h` byte-identical to the group's from step 2 (for a
+   representative built from a tools config, against its own embedded
+   config too). This is
    what catches a module silently built against the wrong options.
 5. Header drift: `g diff --quiet <tagA> <tagB> -- <headers in the group's
    .depend>` between member src tags. If any header the module includes
@@ -470,10 +476,14 @@ The `merge` job writes `compat.json` and, per ABI, `pass-build-ids.txt`
 is dropped from the package's `build_ids`**, so on that kernel the boot hook
 reports `kernel-not-supported` and the box stays on mpd5. It is reported in
 the run summary, the release notes and `coverage.json`. The merge fails the
-run (nothing is packaged) when a supported ABI has no passing kernel, when a
+run, and that ABI's package job refuses to package (`gate.txt` next to its
+pass list names the reason), when a supported ABI has no passing kernel, when a
 planned kernel of a supported ABI has no result at all (smoke
-infrastructure), or, in `latest-per-series` scope, when any supported kernel
-fails (on a PR that is the change under review breaking it). A planned
+infrastructure, or its kmods build failed, which the reason then says), or,
+in `latest-per-series` scope, when any supported kernel fails (on a PR that
+is the change under review breaking it). The gate is per ABI: another ABI's
+package is not blocked by it. A package job whose ABI has no kmods artifact
+fails. A planned
 kernel whose set is gone from the mirror is dropped with reason `set-gone`
 and a warning, never an error: its `.ko` is untested for this `kmod_src`, so
 it is not shipped, and failing on it would block every later release. A

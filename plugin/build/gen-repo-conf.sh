@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-[ -n "$URL" ] && [ -n "$PUB" ] || usage
+{ [ -n "$URL" ] && [ -n "$PUB" ]; } || usage
 [ -f "$PUB" ] || { echo "gen-repo-conf.sh: public key not found: $PUB" >&2; exit 1; }
 
 # ERE: an OPNsense series segment (NN.N or NN.NN) at the end of the URL.

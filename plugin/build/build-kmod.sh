@@ -36,10 +36,10 @@ command -v make >/dev/null 2>&1 || { echo "build-kmod.sh: make not found" >&2; e
 n=0
 while IFS=' ' read -r build_id kernbuilddir sysdir _rest; do
 	case "$build_id" in ''|'#'*) continue ;; esac
-	[ -n "$kernbuilddir" ] && [ -n "$sysdir" ] || {
+	if [ -z "$kernbuilddir" ] || [ -z "$sysdir" ]; then
 		echo "build-kmod.sh: malformed manifest line: $build_id $kernbuilddir $sysdir" >&2
 		exit 1
-	}
+	fi
 	if [ "$kernbuilddir" = prebuilt ]; then
 		echo ">>> stage-prebuilt BUILD_ID=$build_id"
 		make -C "$KMOD_DIR" BUILD_ID="$build_id" KO="$sysdir" stage-prebuilt

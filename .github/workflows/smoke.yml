@@ -183,11 +183,17 @@ jobs:
 
       # No results are recorded then: a build failure is not a kernel
       # failure and must not poison the compat cache.
+      # The marker lets the merge job name the real cause (the ABI's kmods
+      # build) instead of a bare no-result.
       - name: Skip (no kmods artifact)
         if: steps.artifact.outcome != 'success'
         env:
           SLUG: ${{ matrix.slug }}
-        run: echo "::warning::no kmods artifact for $SLUG; smoke skipped"
+          LOGS: ${{ runner.temp }}/if_pppoe-smoke/logs
+        run: |
+          echo "::warning::no kmods artifact for $SLUG; smoke skipped"
+          mkdir -p "$LOGS"
+          echo "$SLUG" > "$LOGS/no-kmods"
 
       - name: Enable KVM
         if: steps.artifact.outcome == 'success'
@@ -241,7 +247,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always() && steps.artifact.outcome == 'success'
+        if: always()
         with:
           name: ${{ inputs.artifact-prefix }}smoke-${{ matrix.slug }}-${{ matrix.shard }}
           path: ${{ runner.temp }}/if_pppoe-smoke/logs/
@@ -288,6 +294,10 @@ jobs:
       #  - PR scope (latest-per-series): any supported kernel failed, since
       #    that is the change under review breaking it.
       # Otherwise a failed kernel is dropped from its package and reported.
+      # Gates are per ABI: each ABI's verdict goes to out/pass/<slug>/gate.txt
+      # ("ok" or the reason) and its package job enforces it, so one ABI's
+      # failure never blocks another ABI's package. The job still fails when
+      # any supported ABI's gate failed.
       # A planned kernel whose set the mirror no longer serves (404/410,
       # smoke-vm.sh set-gone.txt; discovery's --union keeps such kernels) is
       # dropped with reason set-gone and a warning, never an error: its .ko
@@ -314,6 +324,13 @@ jobs:
           } > out/report.md
           while read -r abi slug status; do
             mkdir -p "out/pass/$slug"
+            gate=ok
+            # smoke.yml's skip step leaves this marker when the ABI has no
+            # kmods artifact: the kmods build failed, not the kernels.
+            nokmods=
+            if find parts -path "*smoke-$slug-*" -name no-kmods 2>/dev/null | grep -q .; then
+              nokmods=1
+            fi
             sh .github/scripts/compat.sh pass-list "$abi" kernels/kernels.json out/compat.json "$k" plan/planned.txt \
               out/set-gone.txt > "out/pass/$slug/pass-build-ids.txt"
             sh .github/scripts/compat.sh fail-list "$abi" kernels/kernels.json out/compat.json "$k" plan/planned.txt \
@@ -324,16 +341,21 @@ jobs:
             echo "| $abi | $status | $npass | $nfail |" >> out/report.md
             while read -r bid ver why; do
               [ -n "$bid" ] || continue
+              [ "$why" != no-result ] || [ -z "$nokmods" ] || why="no-result (kmods-$slug build failed, nothing to smoke)"
               lvl=warning
               if [ "$status" = supported ] && [ "$why" != set-gone ]; then
-                if [ "$why" = no-result ] || [ "$SCOPE" = latest-per-series ]; then lvl=error; rc=1; fi
+                if [ "${why%% *}" = no-result ] || [ "$SCOPE" = latest-per-series ]; then
+                  lvl=error; rc=1; gate="kernel $ver ($bid) dropped: $why"
+                fi
               fi
               echo "::$lvl::$abi kernel $ver ($bid) dropped: $why"
             done < "out/pass/$slug/failed-build-ids.txt"
             if [ "$status" = supported ] && [ "$npass" = 0 ]; then
               echo "::error::$abi: no kernel passed; nothing to package"
               rc=1
+              [ "$gate" != ok ] || gate="no kernel passed"
             fi
+            echo "$gate" > "out/pass/$slug/gate.txt"
           done < <(jq -r '.include[] | "\(.abi) \(.slug) \(.status)"' plan/abis.json)
           if [ -s out/dropped.txt ]; then
             { echo; echo 'Dropped (the boot hook refuses these kernels and uses mpd5):'; echo '```'; cat out/dropped.txt; echo '```'; } >> out/report.md
@@ -361,7 +383,8 @@ jobs:
   pass-lists:
     name: pass list ${{ matrix.abi }}
     needs: [plan, merge]
-    if: ${{ !cancelled() && needs.merge.result == 'success' }}
+    # Also when merge failed: its gate.txt carries each ABI's own verdict.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.merge.result == 'success' || needs.merge.result == 'failure') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     strategy:

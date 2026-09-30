@@ -187,6 +187,40 @@ kb_opt_crosscheck() {
 	return 0
 }
 
+# kb_tools_tags -- opnsense/tools tag names, one per line (a file://
+# TOOLS_RAW is a local mirror: its top-level directory names).
+kb_tools_tags() {
+	_tt=${TOOLS_RAW:-https://raw.githubusercontent.com/opnsense/tools}
+	case "$_tt" in
+	file://*) ls -1 "${_tt#file://}" ;;
+	*) git ls-remote --tags --refs "${TOOLS_REPO:-https://github.com/opnsense/tools}" | sed 's|.*refs/tags/||' ;;
+	esac
+}
+
+# kb_tools_config TAG SERIES KERNCONF OUT -- fetch config/SERIES/KERNCONF
+# from opnsense/tools@TAG, else from the newest tools tag of SERIES (SERIES
+# or SERIES.N, no pre-releases) that is <= TAG. Prints the ref used; never
+# falls back to a branch or another series.
+kb_tools_config() {
+	_tt=${TOOLS_RAW:-https://raw.githubusercontent.com/opnsense/tools}
+	if kb_fetch "$_tt/$1/config/$2/$3" "$4" 2>/dev/null; then
+		echo "$1"
+		return 0
+	fi
+	_want=$(kb_version_key "$1")
+	_near=$(kb_tools_tags | grep -E "^$(echo "$2" | sed 's/\./\\./g')(\.[0-9]+)?\$" |
+		while IFS= read -r _t; do printf '%s %s\n' "$(kb_version_key "$_t")" "$_t"; done |
+		LC_ALL=C awk -v w="$_want" '$1 <= w' | LC_ALL=C sort | tail -n 1 | cut -d' ' -f2)
+	if [ -z "$_near" ]; then
+		kb_log "kbuild: opnsense/tools has neither a $1 tag nor an earlier $2 tag with config/$2/$3"
+		return 1
+	fi
+	kb_log "kbuild: opnsense/tools has no $1 tag; using $_near (newest $2 tag <= $1) for config/$2/$3"
+	echo "::warning::opnsense/tools has no $1 tag; using $_near for config/$2/$3" >&2
+	kb_fetch "$_tt/$_near/config/$2/$3" "$4" || return 1
+	echo "$_near"
+}
+
 # kb_prepare TAG SERIES KERNCONF SET_URL SET_SHA BUILD_ID ROOT CACHE_DIR --
 # config -d-only kernel build dir for opnsense/src@TAG (docs/CI.md "Kernel
 # build dir"), cached as kbuild-TAG-KERNCONF.tar.gz. Sets KB_SRC, KB_KBD.
@@ -197,7 +231,6 @@ kb_prepare() {
 	KB_SRC="$_root/$_name/src"
 	KB_KBD="$_root/$_name/kbuild/$_kc"
 	_srcrepo=${SRC_REPO:-https://github.com/opnsense/src}
-	_tools=${TOOLS_RAW:-https://raw.githubusercontent.com/opnsense/tools}
 	mkdir -p "$_cache" "$_root"
 	rm -rf "${_root:?}/$_name"
 	if [ -f "$_tar" ]; then
@@ -207,42 +240,63 @@ kb_prepare() {
 	else
 		kb_log "kbuild: preparing $_name"
 		mkdir -p "$_root/$_name"
-		# Blobless, depth-1, sparse: only sys/ is materialised.
+		# Blobless, depth-1, sparse: only sys/ is materialised. src tags are
+		# annotated, so git warns "refs/tags/<tag> <tag object> is not a
+		# commit!"; the checkout is still the peeled tag commit.
 		git clone --quiet --depth 1 --filter=blob:none --sparse \
 			--branch "$_tag" "$_srcrepo" "$KB_SRC" || return 1
 		git -C "$KB_SRC" sparse-checkout set sys || return 1
 		git -C "$KB_SRC" log -1 --format='opnsense/src %H %cI' >&2
 
-		# kernel-<tag> is built from opnsense/tools@<tag>; tools has no
-		# tag for every kernel patch, so fall back to TOOLS_FALLBACK_REF
-		# (default master) -- the cross-check below catches a config
-		# that does not match the published kernel.
-		_cf="$_root/$_name/$_kc.conf"
-		if ! kb_fetch "$_tools/$_tag/config/$_series/$_kc" "$_cf"; then
-			_fb=${TOOLS_FALLBACK_REF:-master}
-			kb_log "kbuild: opnsense/tools has no $_tag tag; using $_fb for config/$_series/$_kc"
-			echo "::warning::opnsense/tools has no $_tag tag; using $_fb for config/$_series/$_kc"
-			kb_fetch "$_tools/$_fb/config/$_series/$_kc" "$_cf" || return 1
-		fi
-		sed '/%%DEBUG%%/d' "$_cf" > "$KB_SRC/sys/amd64/conf/$_kc"
 		mkdir -p "$KB_KBD"
-		(cd "$KB_SRC/sys/amd64/conf" && config -d "$KB_KBD" "$_kc") >&2 || return 1
-
 		_set=$(kb_get_set "$_url" "$_sha" "$_cache") || return 1
-		kb_extract_kernel "$_set" "$KB_KBD/kernel" || return 1
+		_kern="$_root/$_name/kernel"
+		kb_extract_kernel "$_set" "$_kern" || return 1
 
+		# config(8) input, most exact first (docs/CI.md "Kernel build dir"):
+		#  1. the published kernel's own embedded config (kern_conf, what
+		#     config -x prints): its opt_*.h are by construction the ones
+		#     that kernel was built with;
+		#  2. opnsense/tools@<tag> config/<series>/<kernconf>;
+		#  3. the newest opnsense/tools tag of the SAME series <= <tag>
+		#     (tools is not tagged for every kernel-only patch release).
+		# Never another series' config (tools master only carries the
+		# current series). 2 and 3 are cross-checked against 1 below.
 		_emb="$_root/$_name/embedded.conf"
-		if kb_extract_config "$KB_KBD/kernel" "$_emb"; then
-			_rc=0
-			kb_opt_crosscheck "$KB_KBD" "$KB_SRC/sys" "$_emb" "kernel-$_tag" || _rc=$?
-			case $_rc in
-			0) kb_log "opt_*.h match the published kernel's embedded config ($_tag)" ;;
-			1) kb_log "kbuild: opt headers from the tools config differ from kernel-$_tag's embedded config"; return 1 ;;
-			*) echo "::warning::kernel-$_tag: embedded config not usable by config -d; opt_*.h not cross-checked" ;;
-			esac
-		else
-			echo "::warning::kernel-$_tag: no embedded config; opt_*.h not cross-checked"
+		_have_emb=0
+		kb_extract_config "$_kern" "$_emb" && _have_emb=1
+		_from=""
+		if [ "$_have_emb" = 1 ]; then
+			cp "$_emb" "$KB_SRC/sys/amd64/conf/$_kc"
+			if (cd "$KB_SRC/sys/amd64/conf" && config -d "$KB_KBD" "$_kc") >&2; then
+				_from=embedded
+				kb_log "opt_*.h generated from the published kernel's embedded config ($_tag)"
+			else
+				echo "::warning::kernel-$_tag: embedded config not usable by config -d; trying opnsense/tools"
+				rm -rf "$KB_KBD"
+				mkdir -p "$KB_KBD"
+			fi
 		fi
+		if [ -z "$_from" ]; then
+			_cf="$_root/$_name/$_kc.conf"
+			_tref=$(kb_tools_config "$_tag" "$_series" "$_kc" "$_cf") || return 1
+			sed '/%%DEBUG%%/d' "$_cf" > "$KB_SRC/sys/amd64/conf/$_kc"
+			(cd "$KB_SRC/sys/amd64/conf" && config -d "$KB_KBD" "$_kc") >&2 || return 1
+			_from="opnsense/tools@$_tref"
+			if [ "$_have_emb" = 1 ]; then
+				_rc=0
+				kb_opt_crosscheck "$KB_KBD" "$KB_SRC/sys" "$_emb" "kernel-$_tag" || _rc=$?
+				case $_rc in
+				0) kb_log "opt_*.h match the published kernel's embedded config ($_tag)" ;;
+				1) kb_log "kbuild: opt headers from $_from differ from kernel-$_tag's embedded config"; return 1 ;;
+				*) echo "::warning::kernel-$_tag: embedded config not usable by config -d; opt_*.h from $_from not cross-checked" ;;
+				esac
+			else
+				echo "::warning::kernel-$_tag: no embedded config; opt_*.h from $_from not cross-checked"
+			fi
+		fi
+		echo "$_from" > "$KB_KBD/.config-source"
+		mv "$_kern" "$KB_KBD/kernel"
 		tar -czf "$_tar" -C "$_root/$_name" src kbuild || return 1
 	fi
 	for _h in opt_global.h opt_inet.h opt_inet6.h opt_rss.h; do

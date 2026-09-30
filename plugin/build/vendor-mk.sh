@@ -11,10 +11,10 @@ usage() {
 
 [ $# -eq 1 ] || usage
 SRC=$1
-[ -d "$SRC/Mk" ] && [ -d "$SRC/Templates" ] && [ -f "$SRC/Scripts/version.sh" ] || {
+if [ ! -d "$SRC/Mk" ] || [ ! -d "$SRC/Templates" ] || [ ! -f "$SRC/Scripts/version.sh" ]; then
     echo "$0: '$SRC' does not look like an opnsense/plugins checkout (missing Mk/, Templates/ or Scripts/version.sh)" >&2
     exit 1
-}
+fi
 
 REPO_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DEST_MK="$REPO_ROOT/plugin/Mk"

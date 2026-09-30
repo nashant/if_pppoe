@@ -98,7 +98,7 @@
 #   BUILD_ALL_WORK  Scratch dir (default plugin/build/work-all); wiped.
 #   PLUGIN_ABIS, PLUGIN_PHP   Forwarded to build-plugin.sh (its own
 #                             defaults: 25.7 / 83).
-#   SRC_REPO, TOOLS_RAW, TOOLS_FALLBACK_REF   (kernels-json mode) see
+#   SRC_REPO, TOOLS_RAW, TOOLS_REPO   (kernels-json mode) see
 #                 lib/kbuild.sh kb_prepare.
 set -eu
 
@@ -329,8 +329,11 @@ EOF2
 	plugin_base=$(sed -n 's/^PLUGIN_VERSION=[[:space:]]*//p' "$PLUGIN_DIR/Makefile")
 	want_plugin=$plugin_base
 	[ "$PLUGIN_REVISION" = 0 ] || want_plugin="${plugin_base}_$PLUGIN_REVISION"
+	# Setting ABI alone makes pkg guess OSVERSION as <major>00000 and refuse
+	# the repo it just built ("wrong OS version"); this is only a resolve
+	# check against our own repo, so the OS version is not what's tested.
 	rpkg() {
-		PKG_DBDIR="$rc/db" INSTALL_AS_USER=yes pkg -R "$rc/repos" \
+		PKG_DBDIR="$rc/db" INSTALL_AS_USER=yes IGNORE_OSVERSION=yes pkg -R "$rc/repos" \
 			-o PKG_CACHEDIR="$rc/cache" -o ABI="$ABI" "$@"
 	}
 	rpkg update -f -r IfPppoeCheck || die "resolve check: pkg update from $REPO_DIR failed"
@@ -529,10 +532,10 @@ fi
 
 # --- lab mode (--target-kernel) -------------------------------------------------
 command -v config >/dev/null 2>&1 || die "config(8) not found; this must run on a FreeBSD host"
-[ -f "$LAB_SMP_KERNEL" ] && [ -f "$LAB_SMP_KBD_FILE" ] || {
+if [ ! -f "$LAB_SMP_KERNEL" ] || [ ! -f "$LAB_SMP_KBD_FILE" ]; then
 	echo "build-all.sh: LAB_HOME=$LAB_HOME has no collected kernel/SMP (run lab/vm/build-kernel.sh collect there first)" >&2
 	exit 1
-}
+fi
 LAB_SMP_KBD=$(cat "$LAB_SMP_KBD_FILE")
 [ -d "$LAB_SMP_KBD" ] || die "$LAB_SMP_KBD_FILE names a KERNBUILDDIR that doesn't exist: $LAB_SMP_KBD"
 [ -d "$LAB_SYSDIR" ] || die "LAB_HOME=$LAB_HOME has no src/sys (SYSDIR)"

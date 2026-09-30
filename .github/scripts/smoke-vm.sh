@@ -98,8 +98,16 @@ kjson() { # BID FIELD
 }
 
 fetch_image() {
-	local base="https://download.freebsd.org/releases/VM-IMAGES/${FREEBSD_VERSION}-RELEASE/amd64/Latest"
+	local rel="VM-IMAGES/${FREEBSD_VERSION}-RELEASE/amd64/Latest" base
 	local xz="FreeBSD-${FREEBSD_VERSION}-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
+	# EOL releases move from download.freebsd.org to archive.freebsd.org's
+	# old-releases (14.3 did: releases/VM-IMAGES/ lists 14.4+ only).
+	for base in "https://download.freebsd.org/releases/$rel" \
+	    "https://archive.freebsd.org/old-releases/$rel"; do
+		if curl -fsSL --retry 3 -o /dev/null -r 0-0 "$base/CHECKSUM.SHA256"; then
+			break
+		fi
+	done
 	IMG="$SMOKE_DIR/${xz%.xz}"
 	# IMAGE_CACHE keeps only the .xz (actions/cache); re-verified every run.
 	if [ ! -f "$IMAGE_CACHE/$xz" ]; then
@@ -110,7 +118,10 @@ fetch_image() {
 	local want got
 	want=$(grep -F "($xz)" "$IMAGE_CACHE/CHECKSUM.SHA256" | awk '{print $NF}')
 	got=$(sha256sum "$IMAGE_CACHE/$xz" | awk '{print $1}')
-	[ -n "$want" ] && [ "$want" = "$got" ] || { echo "smoke-vm: checksum mismatch for $xz ($want vs $got)" >&2; exit 1; }
+	if [ -z "$want" ] || [ "$want" != "$got" ]; then
+		echo "smoke-vm: checksum mismatch for $xz ($want vs $got)" >&2
+		exit 1
+	fi
 	xz -dc "$IMAGE_CACHE/$xz" > "$IMG"
 }
 
@@ -215,10 +226,12 @@ EOF
 	gput "$HERE/smoke-guest.sh" "$SSH_USER@127.0.0.1:/tmp/ci/"
 	gput "$ARTIFACT_DIR"/bin/* "$SSH_USER@127.0.0.1:/tmp/ci/bin/"
 	gput "$SMOKE_DIR"/sets/*.txz "$SSH_USER@127.0.0.1:/tmp/ci/sets/"
-	while read -r bid; do
-		gssh "mkdir -p /tmp/ci/ko/$bid"
-		gput "$ARTIFACT_DIR/ko/$bid/if_pppoe.ko" "$SSH_USER@127.0.0.1:/tmp/ci/ko/$bid/"
-	done < "$STAGED"
+	# fd 3, not stdin: ssh/scp in the body would swallow the rest of the
+	# list (only the first kernel's .ko reached the guest).
+	while read -r bid <&3; do
+		gssh "mkdir -p /tmp/ci/ko/$bid" </dev/null
+		gput "$ARTIFACT_DIR/ko/$bid/if_pppoe.ko" "$SSH_USER@127.0.0.1:/tmp/ci/ko/$bid/" </dev/null
+	done 3< "$STAGED"
 	gssh 'chmod +x /tmp/ci/bin/*'
 	rm -rf "$SMOKE_DIR/sets"
 }
