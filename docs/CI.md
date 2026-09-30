@@ -34,7 +34,8 @@ with) `p4/plugin`.
 | `.github/workflows/build.yml` | Reusable: discover kernels, build the kmods per ABI in a FreeBSD VM, smoke (`smoke.yml`), package per ABI |
 | `.github/workflows/smoke.yml` | Reusable: per-kernel KVM boot smoke, sharded; merges results into `compat.json` and per-ABI pass lists |
 | `.github/workflows/nightly.yml` | Daily. New OPNsense kernel: kernel-only refresh release `v<ver>_<N>`. Otherwise: regression build of `main` against the latest tags. Opens an issue on failure and when a new series appears |
-| `.github/workflows/release.yml` | Tag `v<ver>`: build every kernel, smoke the untested ones, publish one signed repo per ABI (`publish.yml`) |
+| `.github/workflows/release.yml` | Tag `v<ver>` (also `workflow_call`/`workflow_dispatch` with a `tag` input): build every kernel, smoke the untested ones, publish one signed repo per ABI (`publish.yml`) |
+| `.github/workflows/auto-release.yml` | `workflow_run` of `ci` (success, `main`): if `PLUGIN_VERSION` has no `v<ver>` tag yet, tags it and calls `release.yml` + `pages.yml` |
 | `.github/workflows/publish.yml` | Reusable: this run's artifacts to a GitHub Release (release.yml, nightly refresh) |
 | `.github/workflows/pages.yml` | Opt-in (`ENABLE_PAGES=true`): publishes a release's repos to GitHub Pages as `<ABI>/` |
 | `.github/workflows/renovate.yml` | Optional self-hosted Renovate. Leave it off if the Renovate GitHub App is installed |
@@ -78,7 +79,9 @@ nightly.yml: resolve (latest tags; discovery at the latest release's tag; diff b
              └─ new build_id(s) ─► build.yml (ref=v<ver>, <ver>_<N>, sign, untested)
                                    ─► publish.yml (tag v<ver>_<N> at v<ver>'s commit) ─► pages.yml ─► report
 release.yml: setup (tag == PLUGIN_VERSION, secrets present) ─► build.yml (sign, untested) ─► publish.yml
-pages.yml:   workflow_run(release, success) | workflow_call(nightly) ─► <ABI>/ repos to GitHub Pages
+pages.yml:   workflow_run(release, success) | workflow_call(nightly, auto-release) ─► <ABI>/ repos to GitHub Pages
+auto-release.yml: workflow_run(ci, success, main) ─► tag (v<PLUGIN_VERSION>, skip if it exists)
+                  ─► release.yml (workflow_call) ─► pages.yml (workflow_call)
 ```
 
 An ABI's status is `supported` when any versions.json entry of that ABI is
@@ -515,9 +518,12 @@ under `out/`, never cached, never an artifact, and never in `compat.json`,
 
 `GITHUB_TOKEN` permissions default to `contents: read` in every workflow.
 Only nightly `report` (`issues: write`), the `publish.yml` job
-(`contents: write`, from release.yml and from nightly's `refresh-publish`)
-and pages `deploy` (`pages: write`, `id-token: write`) get more.
-Checkouts use `persist-credentials: false`.
+(`contents: write`, from release.yml and from nightly's `refresh-publish`),
+pages `deploy` (`pages: write`, `id-token: write`) and auto-release's `tag`
+job (`contents: write`) get more.
+Checkouts use `persist-credentials: false`, including auto-release's `tag`
+job: it creates the tag through the Git Data API (`gh api .../git/tags`,
+`.../git/refs`), not `git push`, so no push credential is needed.
 Every action is pinned by commit SHA with a version comment, and Renovate's
 `helpers:pinGitHubActionDigests` keeps them updated.
 
@@ -538,6 +544,45 @@ unset. Then:
   above.
 
 The package versions are `if-pppoe-kmod-<ver>` and `os-if-pppoe-<ver>`.
+
+### Automatic code release
+
+Pushing the tag by hand still works exactly as above. `auto-release.yml`
+does it for you: bump `PLUGIN_VERSION` in `plugin/net/if-pppoe/Makefile` in a
+PR, merge it, and once `ci.yml` is green on `main` the tag and release follow
+with no further action.
+
+A tag or Release created with `GITHUB_TOKEN` never starts another workflow
+run ([Triggering a workflow from a workflow](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow):
+"events triggered by the `GITHUB_TOKEN` will not create a new workflow run",
+`workflow_dispatch`/`repository_dispatch` excepted; also see "GitHub Pages"
+below). So `auto-release.yml` cannot rely on the pushed-tag path
+(`release.yml`'s own `push: tags` trigger, then `pages.yml`'s
+`workflow_run(release)`, which also would not fire here since `workflow_run`
+matches the run's own top-level workflow name, not a nested call): it calls
+`release.yml` and `pages.yml` directly (`workflow_call`, `secrets: inherit`)
+instead.
+
+`auto-release.yml`'s `tag` job runs on `workflow_run` of `ci` (`main`,
+`conclusion == 'success'`), checked out at `github.event.workflow_run.head_sha`
+(not the default `GITHUB_SHA`, which for `workflow_run` is the last commit on
+the default branch, not the commit that triggered `ci`). It reads
+`PLUGIN_VERSION` and exits cleanly if `v<PLUGIN_VERSION>` already exists
+(`gh api .../git/ref/tags/<tag>`) -- this both skips a `main` push that did
+not touch the version and prevents two runs from double-releasing. Otherwise
+it creates an annotated tag (tagger `github-actions[bot]`) on that commit via
+the Git Data API, then calls `release.yml` and `pages.yml`, mirroring
+nightly.yml's `refresh-publish`/`refresh-pages` job pattern. A `v<ver>_<N>`
+suffix is never produced here (that form is nightly's kernel-only refresh,
+and release.yml refuses it regardless of caller).
+
+Two auto-releases can't race each other: `auto-release.yml` itself runs in
+an `auto-release` concurrency group (workflow-level, so it covers the whole
+run: tag, release and pages), and two `workflow_run(ci)` events can't both
+start tagging at once. An auto-release can't race a manually pushed tag's
+release either, regardless of concurrency-group naming, because both paths'
+`gh release create` go through `publish.yml`'s single `repo-publish`
+(`queue: max`) group, shared by every caller.
 
 ### Nightly refresh
 
@@ -608,9 +653,11 @@ input to run the check without publishing.
 
 ## GitHub Pages
 
-`pages.yml` runs on `workflow_run` of `release` (conclusion success), on
-`release: published` (a Release a human publishes), on `workflow_call` from
-nightly's refresh, and on `workflow_dispatch` (optional `tag`, default
+`pages.yml` runs on `workflow_run` of `release` (conclusion success; only a
+manually pushed tag's run, not release.yml called via `workflow_call` --
+see "Automatic code release" above), on `release: published` (a Release a
+human publishes), on `workflow_call` from nightly's refresh and from
+auto-release.yml, and on `workflow_dispatch` (optional `tag`, default
 latest). `pages-site.sh` downloads every `if_pppoe-repo-<slug>.tar.gz` asset
 plus `kernels.json`, `compat.json` and `coverage.json`, and builds:
 

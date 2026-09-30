@@ -3,12 +3,26 @@
 # every build_id not already cached as passing, and publish one signed pkg
 # repo per ABI as a GitHub Release. Kernel-only refreshes (v<ver>_<N>) come
 # from nightly.yml, never from a pushed tag.
+# Also workflow_call (auto-release.yml) / workflow_dispatch: `tag` input,
+# since github.ref_name there is the caller's ref, not the tag.
 # Secrets/variables: docs/CI.md#secrets-and-variables.
 name: release
 
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: tag to release (already pushed/created), e.g. v0.5.0
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: tag to release; defaults to the ref this is run from
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -24,13 +38,21 @@ jobs:
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
       version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
+      # The one place inputs.tag (workflow_call/workflow_dispatch) falls
+      # back to github.ref_name (push: tags); every other step and job
+      # reads steps.tag.outputs.tag / needs.setup.outputs.tag instead of
+      # repeating this expression.
+      - id: tag
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.tag.outputs.tag }}
           persist-credentials: false
       - id: v
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
           HAVE_KEY: ${{ secrets.IF_PPPOE_REPO_SIGNING_KEY != '' }}
           REPO_URL_BASE: ${{ vars.IF_PPPOE_REPO_URL_BASE }}
         run: |
@@ -38,7 +60,7 @@ jobs:
           case "$version" in
             *_*) echo "::error::$TAG: v<ver>_<N> tags are kernel-only refreshes and are created by nightly.yml, not pushed"; exit 1 ;;
           esac
-          plugin=$(sed -n 's/^PLUGIN_VERSION=[[:space:]]*//p' plugin/net/if-pppoe/Makefile)
+          plugin=$(sh .github/scripts/plugin-version.sh)
           [ "$version" = "$plugin" ] || { echo "::error::tag $TAG != plugin/net/if-pppoe/Makefile PLUGIN_VERSION=$plugin"; exit 1; }
           [ "$HAVE_KEY" = true ] || { echo "::error::secret IF_PPPOE_REPO_SIGNING_KEY is not set"; exit 1; }
           [ -n "$REPO_URL_BASE" ] || { echo "::error::variable IF_PPPOE_REPO_URL_BASE is not set"; exit 1; }
@@ -71,6 +93,6 @@ jobs:
     permissions:
       contents: write
     with:
-      tag: ${{ github.ref_name }}
+      tag: ${{ needs.setup.outputs.tag }}
       matrix: ${{ needs.setup.outputs.matrix }}
-      notes: Code release ${{ github.ref_name }}.
+      notes: Code release ${{ needs.setup.outputs.tag }}.

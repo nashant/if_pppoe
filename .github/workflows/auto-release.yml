@@ -1,0 +1,94 @@
+# ci green on main -> if PLUGIN_VERSION in plugin/net/if-pppoe/Makefile has
+# no v<ver> tag yet, tag that commit and call release.yml (and pages.yml)
+# directly (workflow_call): a tag/ref created with GITHUB_TOKEN never
+# triggers other workflows, so tag push / workflow_run(release) would not
+# fire. That chain still covers a human-pushed tag unchanged.
+# See docs/CI.md#releases.
+name: auto-release
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      created: ${{ steps.create.outputs.created }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - id: plan
+        run: |
+          set -euo pipefail
+          plugin=$(sh .github/scripts/plugin-version.sh)
+          case "$plugin" in
+            *_*) echo "::error::PLUGIN_VERSION=$plugin contains '_'; v<ver>_<N> tags are nightly.yml's kernel-only refreshes, never auto-released"; exit 1 ;;
+          esac
+          echo "tag=v$plugin" >> "$GITHUB_OUTPUT"
+
+      # Annotated (tagger github-actions[bot]), via the Git Data API: no
+      # `git push` credential needed, and matches the identity convention at
+      # https://github.com/actions/checkout/pull/1707.
+      - id: create
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh api --silent "repos/$GH_REPO/git/ref/tags/$TAG" 2>/dev/null; then
+            echo "::notice::$TAG already exists; nothing to release"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag_sha=$(gh api "repos/$GH_REPO/git/tags" \
+            -f tag="$TAG" -f message="$TAG" -f object="$SHA" -f type=commit \
+            -f "tagger[name]=github-actions[bot]" \
+            -f "tagger[email]=41898282+github-actions[bot]@users.noreply.github.com" \
+            --jq .sha)
+          gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$tag_sha" >/dev/null
+          echo "::notice::created annotated tag $TAG on $SHA"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: write
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit
+
+  # Mirrors nightly.yml's refresh-pages job: release.yml ran here as a
+  # called workflow, so its own workflow_run(release) listener never fired.
+  pages:
+    needs: [tag, release]
+    if: needs.tag.outputs.created == 'true'
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
