@@ -34,12 +34,27 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       created: ${{ steps.create.outputs.created }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # workflow_run uses main's tip's workflow file for whichever ci run
+      # finished; only release if that commit is still main's tip.
+      - id: tip
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$tip" = "$SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::ci finished for $SHA but main is now at $tip; leaving the release decision to that commit's run"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.tip.outputs.current == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - id: plan
+        if: steps.tip.outputs.current == 'true'
         run: |
           set -euo pipefail
           plugin=$(sh .github/scripts/plugin-version.sh)
@@ -52,6 +67,7 @@ jobs:
       # `git push` credential needed, and matches the identity convention at
       # https://github.com/actions/checkout/pull/1707.
       - id: create
+        if: steps.tip.outputs.current == 'true'
         env:
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
