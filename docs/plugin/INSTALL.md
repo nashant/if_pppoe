@@ -19,6 +19,8 @@ uses `pkg+https://pkg.FreeBSD.org/${ABI}/latest` the same way). So:
   to the other repo by itself. A URL without a series segment also avoids
   the failure in https://github.com/opnsense/core/issues/10622, where the
   ABI was already `FreeBSD:15:amd64` while the release still said 26.1.
+  The installed packages are *not* replaced by the upgrade itself, though:
+  see "OPNsense major upgrades" below.
 
 `os-if-pppoe` is the same package for every series of an ABI. What gates a
 series is the plugin's `interfaces.inc` hook: `hookctl.php` refuses with
@@ -57,6 +59,70 @@ so boxes on that kernel stay on mpd5 instead of loading an untested module.
 The refresh still publishes for the kernels that passed; the failed kernel
 is named in the release notes ("New kernels dropped by this refresh") and is
 not retried until the module source changes (`docs/CI.md#nightly-refresh`).
+
+## OPNsense major upgrades (25.7/26.1 -> 26.7)
+
+**What goes wrong.** The major upgrade (System -> Firmware -> Updates,
+"upgrade") runs `opnsense-update -u`, which only stages the kernel, base and
+package sets, then the `upgrade` syshook, then reboots
+(opnsense/core `src/opnsense/scripts/firmware/upgrade.sh`, master
+`d7d7076afe9b`). The sets are installed at early boot by core's
+`src/etc/rc.syshook.d/early/05-upgrade` (`opnsense-update -K`, `-B`, `-P`,
+rebooting after each), and `-P` installs the packages with
+`pkg upgrade -fy -r OPNsense` against the local package set
+(opnsense/update `src/update/opnsense-update.sh.in` `install_pkgs()`, master
+`db018c35aac4`). That touches the OPNsense repository only, so
+`if-pppoe-kmod` and `os-if-pppoe` stay the `FreeBSD:14:amd64` build. The
+`FreeBSD:15:amd64` build in the IfPppoe repo has the same version, so no
+later `pkg upgrade` replaces it either. That old `if-pppoe-kmod` has no `.ko`
+for the 26.7 kernel, so the first 26.7 boot stays on mpd5.
+
+(A minor update that crosses ABIs takes the other path,
+`scripts/firmware/update.sh`: it passes `-f` to `opnsense-update -p`, whose
+`pkg upgrade -y -f` has no `-r`, so it reinstalls packages from every repo,
+ours included.)
+
+**What the plugin does about it.**
+
+- The early boot syshook reports `kmod-abi-mismatch` instead of
+  `kernel-not-supported` when `pkg query %q if-pppoe-kmod` (or `os-if-pppoe`)
+  differs from `pkg config abi`, and leaves the WANs on mpd5. Services ->
+  Kernel PPPoE says which ABI is installed and which the system has, and that
+  the "Supported kernels" list comes from the old build.
+- `abi-heal.sh` then reinstalls both packages from the IfPppoe repo:
+  `pkg update -f -r IfPppoe`, a check that the catalogue offers this
+  system's ABI for each installed package, then
+  `pkg install -f -y -U -r IfPppoe if-pppoe-kmod os-if-pppoe`. It runs:
+  - from the start syshook, once rc.bootup has brought the WANs up on mpd5
+    (detached; retries for about 5 minutes while the repo is unreachable);
+  - every 15 minutes from cron (`configctl if-pppoe abiheal cron`), at most
+    hourly after a refusal or failed install;
+  - from the update syshook and the pkg trigger, through configd, once no
+    firmware run, `pkg` or `opnsense-update` is active.
+- After a successful reinstall the page offers the reboot (the `.ko` and
+  `build_ids` changed since the failed boot), and the reboot arms kernel
+  PPPoE.
+- It never removes a package. If the repo has no build for this ABI, or is
+  unreachable, it changes nothing, keeps mpd5 and leaves a notice. The
+  result of each attempt is in `/conf/if_pppoe/abi-heal.json`.
+
+The reinstall can't happen before the first 26.7 boot. The only hook that
+runs after the ABI switch is the update syshook inside `-P`, and there the
+network is not up yet (rc.bootup has not run; the WAN may be this very
+PPPoE link) and pkg is still mid-transaction. So the upgrade costs one extra
+reboot on mpd5.
+
+**By hand**, if the automatic reinstall did not happen (for example, no
+route to the repo):
+
+```
+pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe
+```
+
+or System -> Firmware -> Packages: reinstall `if-pppoe-kmod` and
+`os-if-pppoe`. Reinstalling only `os-if-pppoe` from the Plugins tab is not
+enough, because its `if-pppoe-kmod` dependency stays the old build. Then
+reboot.
 
 ## 1. BUILD: produce the packages
 

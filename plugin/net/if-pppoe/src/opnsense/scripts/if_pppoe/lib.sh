@@ -20,10 +20,16 @@
 : "${IF_PPPOE_LOGGER:=/usr/bin/logger}"
 : "${IF_PPPOE_TIMEOUT:=/bin/timeout}"
 : "${IF_PPPOE_NOW:=}"
+# "" = no package database (tests): the ABI check reports no mismatch
+: "${IF_PPPOE_PKG=/usr/local/sbin/pkg}"
+: "${IF_PPPOE_FW_LOCK:=/tmp/pkg_upgrade.progress}"
+: "${IF_PPPOE_FLOCK:=/usr/local/bin/flock}"
 
 IF_PPPOE_FEATURES="linkevents ipv6 mssfix pfil_pass_foreign single_bytecount"
 IF_PPPOE_STRIKE_MAX=3
 IF_PPPOE_STRIKE_WINDOW=86400
+# the packages this plugin installs from its own IfPppoe repository
+IF_PPPOE_PACKAGES="if-pppoe-kmod os-if-pppoe"
 
 ifp_now()
 {
@@ -164,6 +170,44 @@ ifp_kmod_path()
 		;;
 	esac
 	echo "${_ko}"
+}
+
+# ifp_firmware_busy: a core firmware run holds its lock (same probe as core's
+# scripts/firmware/running.sh; launcher.sh takes it with flock -n -o)
+ifp_firmware_busy()
+{
+	[ -f "${IF_PPPOE_FW_LOCK}" ] && ! ${IF_PPPOE_FLOCK} -n "${IF_PPPOE_FW_LOCK}" true 2>/dev/null
+}
+
+# ifp_abi_mismatch: prints "<package> <package-abi> <system-abi>" and succeeds when an installed
+# plugin package was built for another ABI than this system's `pkg config abi`
+# (pkg-config(8), pkg-query(8) %q). An OPNsense major upgrade switches the ABI
+# (FreeBSD:14:amd64 -> FreeBSD:15:amd64) but only upgrades the OPNsense repository's
+# packages (opnsense-update install_pkgs(): `pkg upgrade -fy -r OPNsense`), so ours
+# keep the old build at the same version and pkg never replaces them.
+ifp_abi_mismatch()
+{
+	[ -n "${IF_PPPOE_PKG}" ] || return 1
+	_sys=$(${IF_PPPOE_PKG} config abi 2>/dev/null)
+	case "${_sys}" in
+	""|*[!A-Za-z0-9:_.-]*) return 1 ;;
+	esac
+	for _p in ${IF_PPPOE_PACKAGES}; do
+		_q=$(${IF_PPPOE_PKG} query %q "${_p}" 2>/dev/null)
+		case "${_q}" in
+		""|*[!A-Za-z0-9:_.*-]*) continue ;;
+		esac
+		# a package ABI may carry a '*' wildcard (FreeBSD:15:*): match it as a pattern
+		# shellcheck disable=SC2254
+		case "${_sys}" in
+		${_q}) ;;
+		*)
+			echo "${_p} ${_q} ${_sys}"
+			return 0
+			;;
+		esac
+	done
+	return 1
 }
 
 ifp_kmod_features()

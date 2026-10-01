@@ -8,5 +8,6 @@ trigger: {
 	sandbox: false
 	script: <<EOS
 pkg.exec({"/bin/sh", "/usr/local/opnsense/scripts/if_pppoe/reapply.sh", "trigger"})
+pkg.exec({"/usr/local/sbin/configctl", "-d", "if-pppoe", "abiheal", "deferred"})
 EOS
 }

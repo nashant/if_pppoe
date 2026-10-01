@@ -1,4 +1,9 @@
 #!/bin/sh
 # os-if-pppoe: runs from core's +POST_INSTALL (rc.syshook update), right
 # after pkg replaced interfaces.inc; re-apply the hook without delay.
-exec /bin/sh "${IF_PPPOE_SCRIPTS:-/usr/local/opnsense/scripts/if_pppoe}/reapply.sh" update
+. "${IF_PPPOE_LIB:-/usr/local/opnsense/scripts/if_pppoe/lib.sh}"
+
+/bin/sh "${IF_PPPOE_SCRIPTS}/reapply.sh" update
+# pkg is still running (and reaps our children): configd runs the ABI check once it is idle
+${IF_PPPOE_CONFIGCTL} -d if-pppoe abiheal deferred >/dev/null 2>&1 || true
+exit 0

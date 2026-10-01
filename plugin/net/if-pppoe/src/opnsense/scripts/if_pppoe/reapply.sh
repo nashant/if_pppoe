@@ -4,8 +4,6 @@
 # Always exits 0 so it can never fail a core update.
 
 . "${IF_PPPOE_LIB:-/usr/local/opnsense/scripts/if_pppoe/lib.sh}"
-: "${IF_PPPOE_FW_LOCK:=/tmp/pkg_upgrade.progress}"
-: "${IF_PPPOE_FLOCK:=/usr/local/bin/flock}"
 
 reason="${1:-update}"
 case "${reason}" in
@@ -16,11 +14,8 @@ esac
 [ "$(ifp_desired)" = "enabled" ] || exit 0
 [ -f "${IF_PPPOE_CONF_DIR}/latch" ] && exit 0
 
-if [ "${reason}" = "cron" ] && [ -f "${IF_PPPOE_FW_LOCK}" ]; then
-	# same probe as core's scripts/firmware/running.sh
-	if ! ${IF_PPPOE_FLOCK} -n "${IF_PPPOE_FW_LOCK}" true 2>/dev/null; then
-		exit 0
-	fi
+if [ "${reason}" = "cron" ] && ifp_firmware_busy; then
+	exit 0
 fi
 
 out=$(ifp_hookctl apply --reapply --reason="${reason}" 2>/dev/null)

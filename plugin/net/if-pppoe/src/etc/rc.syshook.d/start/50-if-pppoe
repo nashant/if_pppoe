@@ -3,4 +3,9 @@
 . "${IF_PPPOE_LIB:-/usr/local/opnsense/scripts/if_pppoe/lib.sh}"
 
 rm -f "${IF_PPPOE_CONF_DIR}/boot.pending"
+# packages left on the old ABI by a major upgrade: reinstall once mpd5 has the WAN up
+# (abi-heal.sh detaches; the reboot it asks for then arms kernel PPPoE)
+if ifp_abi_mismatch >/dev/null; then
+	/bin/sh "${IF_PPPOE_SCRIPTS}/abi-heal.sh" boot
+fi
 exit 0
