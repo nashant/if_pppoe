@@ -35,7 +35,7 @@ with) `p4/plugin`.
 | `.github/workflows/smoke.yml` | Reusable: per-kernel KVM boot smoke, sharded; merges results into `compat.json` and per-ABI pass lists |
 | `.github/workflows/nightly.yml` | Daily. New OPNsense kernel: kernel-only refresh release `v<ver>_<N>`. Otherwise: regression build of `main` against the latest tags. Opens an issue on failure and when a new series appears |
 | `.github/workflows/release.yml` | Tag `v<ver>` (also `workflow_call`/`workflow_dispatch` with a `tag` input): build every kernel, smoke the untested ones, publish one signed repo per ABI (`publish.yml`) |
-| `.github/workflows/auto-release.yml` | `workflow_run` of `ci` (success, `main`): if `PLUGIN_VERSION` has no `v<ver>` tag yet, tags it and calls `release.yml` + `pages.yml` |
+| `.github/workflows/auto-release.yml` | `workflow_run` of `ci` (success, `main`): if that commit is still `main`'s tip and `PLUGIN_VERSION` has no `v<ver>` tag yet, tags it and calls `release.yml` + `pages.yml` |
 | `.github/workflows/publish.yml` | Reusable: this run's artifacts to a GitHub Release (release.yml, nightly refresh) |
 | `.github/workflows/pages.yml` | Opt-in (`ENABLE_PAGES=true`): publishes a release's repos to GitHub Pages as `<ABI>/` |
 | `.github/workflows/renovate.yml` | Optional self-hosted Renovate. Leave it off if the Renovate GitHub App is installed |
@@ -80,7 +80,7 @@ nightly.yml: resolve (latest tags; discovery at the latest release's tag; diff b
                                    ─► publish.yml (tag v<ver>_<N> at v<ver>'s commit) ─► pages.yml ─► report
 release.yml: setup (tag == PLUGIN_VERSION, secrets present) ─► build.yml (sign, untested) ─► publish.yml
 pages.yml:   workflow_run(release, success) | workflow_call(nightly, auto-release) ─► <ABI>/ repos to GitHub Pages
-auto-release.yml: workflow_run(ci, success, main) ─► tag (v<PLUGIN_VERSION>, skip if it exists)
+auto-release.yml: workflow_run(ci, success, main) ─► tag (v<PLUGIN_VERSION>; skip if it exists or main has moved on)
                   ─► release.yml (workflow_call) ─► pages.yml (workflow_call)
 ```
 
