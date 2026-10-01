@@ -92,10 +92,13 @@ while IFS= read -r row; do
 	[ -n "$repo" ] || { need "no signed repo-$slug.tar.gz" || continue; }
 	# The tarball must hold the <ABI>/ catalogue and client-conf/, nothing else
 	# at the top (pages.yml merges several of them into one site).
-	top=$(tar -tzf "$repo" | sed -e 's|^\./||' -e 's|/.*||' | grep -v '^$' | LC_ALL=C sort -u | paste -sd' ')
+	# List once, then grep the text: `tar | grep -q` under pipefail fails when
+	# grep exits on its first match and tar dies of EPIPE.
+	listing=$(tar -tzf "$repo")
+	top=$(sed -e 's|^\./||' -e 's|/.*||' <<<"$listing" | grep -v '^$' | LC_ALL=C sort -u | paste -sd' ')
 	[ "$top" = "$abi client-conf" ] || [ "$top" = "client-conf $abi" ] \
 		|| { need "repo-$slug.tar.gz top level is '$top', expected '$abi' and 'client-conf'" || continue; }
-	tar -tzf "$repo" | grep -Eq "^(\./)?$abi/meta(\.conf)?$" \
+	grep -Eq "^(\./)?$abi/meta(\.conf)?$" <<<"$listing" \
 		|| { need "repo-$slug.tar.gz has no $abi/meta.conf (unsigned or empty catalogue)" || continue; }
 
 	pkgs=()
