@@ -186,6 +186,17 @@ $r = $M::mergeStatus('enabled', engine(['kernels' => $k, 'reboot_required' => tr
 check(str_starts_with((string)$r['advice'], 'Rebooting will not enable kernel PPPoE (the installed kernel 26.1'),
     'reboot_required branch keeps precedence', $failures);
 
+$abi = ['package' => 'if-pppoe-kmod', 'installed' => 'FreeBSD:14:amd64', 'system' => 'FreeBSD:15:amd64'];
+$r = $M::mergeStatus('enabled', engine(['package_abi' => $abi, 'boot' => ['result' => 'failed', 'reason' => 'kmod-abi-mismatch']]));
+check($r['package_abi'] === $abi, 'package_abi passed through', $failures);
+check($r['advice'] === 'Installed if-pppoe-kmod is built for FreeBSD:14:amd64 but this system is FreeBSD:15:amd64; reinstall it'
+    . ' (System: Firmware: Packages, reinstall if-pppoe-kmod and os-if-pppoe, or pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe), then reboot.',
+    'old-ABI packages: reinstall advice, not the generic failed-boot text', $failures);
+$r = $M::mergeStatus('enabled', engine(['package_abi' => ['package' => 'if-pppoe-kmod']]));
+check($r['package_abi'] === null, 'incomplete package_abi dropped', $failures);
+$r = $M::mergeStatus('enabled', engine([]));
+check($r['package_abi'] === null, 'no package_abi: null', $failures);
+
 $k = $kernels;
 $k['upgrade'] = ['version' => '26.7', 'covered' => null];
 $r = $M::mergeStatus('enabled', engine(['kernels' => $k]));

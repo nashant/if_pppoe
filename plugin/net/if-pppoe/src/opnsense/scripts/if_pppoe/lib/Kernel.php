@@ -442,6 +442,34 @@ class Kernel implements SystemFacts
         return $out;
     }
 
+    /** IF_PPPOE_PACKAGES in lib.sh: what the IfPppoe repository installs */
+    public const PACKAGES = ['if-pppoe-kmod', 'os-if-pppoe'];
+
+    /**
+     * An installed plugin package built for another ABI than this system's (`pkg config abi`
+     * vs `pkg query %q`, as lib.sh ifp_abi_mismatch()), e.g. FreeBSD:14:amd64 builds left
+     * behind by a major upgrade to FreeBSD:15. null when they match or pkg cannot say.
+     *
+     * @return ?array{package: string, installed: string, system: string}
+     */
+    public function packageAbiMismatch(): ?array
+    {
+        $valid = fn(string $abi): bool => preg_match('/^[A-Za-z0-9:_.*-]+$/', $abi) === 1;
+        $sys = $this->proc->run([$this->env->bin('pkg'), 'config', 'abi'], null, 10);
+        $system = trim($sys->out);
+        if (!$sys->ok() || !$valid($system) || str_contains($system, '*')) {
+            return null;
+        }
+        foreach (self::PACKAGES as $p) {
+            $q = $this->proc->run([$this->env->bin('pkg'), 'query', '%q', $p], null, 10);
+            $abi = trim($q->out);
+            if ($q->ok() && $valid($abi) && !fnmatch($abi, $system)) {
+                return ['package' => $p, 'installed' => $abi, 'system' => $system];
+            }
+        }
+        return null;
+    }
+
     /** The shipped features file exists and lists $feature (full kern.features name). */
     public function installedFeatureListed(string $feature): bool
     {

@@ -227,6 +227,18 @@ switch ($cmd) {
         @mkdir("$fake/ctl", 0700, true);
         file_put_contents($ctlf, json_encode($st));
         exit(0);
+    case 'pkg':
+        /* fake/pkg.json = {abi: <pkg config abi>, installed: {<name>: <%q>}}; absent = no pkg */
+        $pkg = json_decode((string)@file_get_contents("$fake/pkg.json"), true);
+        if (!is_array($pkg)) { exit(1); }
+        if (($args[0] ?? '') === 'config' && ($args[1] ?? '') === 'abi') { echo $pkg['abi'] . "\n"; exit(0); }
+        if (($args[0] ?? '') === 'query' && ($args[1] ?? '') === '%q') {
+            $a = $pkg['installed'][$args[2] ?? ''] ?? null;
+            if ($a === null) { exit(1); }
+            echo $a . "\n";
+            exit(0);
+        }
+        exit(1);
     case 'pgrep':
         /* -F pidfile: alive when the pidfile says "alive" */
         exit(trim((string)@file_get_contents($args[1] ?? '')) === 'alive' ? 0 : 1);

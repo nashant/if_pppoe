@@ -10,6 +10,7 @@
 mkdir -p "${IF_PPPOE_CONF_DIR}" "${IF_PPPOE_RUN_DIR}"
 chmod 0700 "${IF_PPPOE_CONF_DIR}"
 rm -f "${IF_PPPOE_RUN_DIR}"/notice.d/boot-*
+ifp_notice_clear abi-reboot
 
 stay_stock()
 {
@@ -24,7 +25,8 @@ stay_stock()
 
 fail()
 {
-	ifp_notice boot-failed "kernel PPPoE not armed this boot (${1}); using mpd5"
+	# $1 = reason word, $2 = optional notice text
+	ifp_notice boot-failed "${2:-kernel PPPoE not armed this boot (${1}); using mpd5}"
 	stay_stock failed "${1}" "$(ifp_kmod_identity)"
 	exit 0
 }
@@ -70,7 +72,15 @@ fi
 
 echo "${now}" > "${IF_PPPOE_CONF_DIR}/boot.pending"
 
-ko=$(ifp_kmod_path) || fail "${ko}"
+if ! ko=$(ifp_kmod_path); then
+	# after an OPNsense major upgrade the old-ABI if-pppoe-kmod has no .ko for the new
+	# kernel: say so instead of "kernel-not-supported" (abi-heal.sh reinstalls it once
+	# the network is up; this boot has none to spare and pkg may not be usable yet)
+	# shellcheck disable=SC2086
+	abi=$(ifp_abi_mismatch) && set -- ${abi} && \
+	    fail kmod-abi-mismatch "kernel PPPoE not armed this boot: installed $1 is built for $2 but this system is $3; using mpd5 until it is reinstalled (pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe), then reboot"
+	fail "${ko}"
+fi
 if ! ifp_kmod_loaded; then
 	${IF_PPPOE_KLDLOAD} "${ko}" || fail kldload
 fi

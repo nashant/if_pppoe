@@ -822,7 +822,8 @@ final class Engine
      * the answer stays no, whatever installed_eligible says.
      *  - kldload, feature-X: only a different .ko can help; feature-X also needs the features
      *    file to exist and list if_pppoe_X.
-     *  - no-build-id, kernel-not-supported, kmod-missing, kmod-checksum: build_ids or the .ko.
+     *  - no-build-id, kernel-not-supported, kmod-missing, kmod-checksum, kmod-abi-mismatch:
+     *    build_ids or the .ko (a reinstall for the right ABI replaces both).
      *  - anything else (hook, unknown): never.
      * "Changed" compares boot.json's "kmod" identity (lib.sh ifp_kmod_identity()) with the
      * installed files; a boot.json without one (older syshook) falls back to mtime > at.
@@ -840,7 +841,7 @@ final class Engine
                 return false;
             }
             $parts = ['ko'];
-        } elseif (in_array($reason, ['no-build-id', 'kernel-not-supported', 'kmod-missing', 'kmod-checksum'], true)) {
+        } elseif (in_array($reason, ['no-build-id', 'kernel-not-supported', 'kmod-missing', 'kmod-checksum', 'kmod-abi-mismatch'], true)) {
             $parts = ['build_ids', 'ko'];
         } else {
             return false;
@@ -981,6 +982,10 @@ final class Engine
         $installedMissing = $this->k->missingInstalledFeatures();
         $installedKmodOk = $this->k->installedKmodMatchesKernel();
         $installedReasons = [];
+        $packageAbi = $this->k->packageAbiMismatch();
+        if ($packageAbi !== null) {
+            $installedReasons[] = "installed {$packageAbi['package']} is built for {$packageAbi['installed']} but this system is {$packageAbi['system']}";
+        }
         /* null = features file unreadable (older kmod package): unknown, not ineligible */
         if ($installedMissing !== null && $installedMissing !== []) {
             $installedReasons[] = 'installed kernel module is missing features: ' . implode(',', $installedMissing);
@@ -1007,6 +1012,8 @@ final class Engine
             'installed_eligible' => $installedReasons === [],
             'installed_reason' => implode('; ', $installedReasons),
             'kmod_upgrade_pending' => $kmodUpgradePending,
+            /* {package, installed, system}|null: Kernel::packageAbiMismatch() */
+            'package_abi' => $packageAbi,
             'kernels' => $kernels,
             'effective' => $eff,
             'settings' => $cfg?->pluginSettings(),

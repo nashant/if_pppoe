@@ -59,11 +59,14 @@ function if_pppoe_services()
  *   is in progress.
  * - reconcile (every minute): lost link events, dead clones, mpd5 on an
  *   eligible WAN; a no-op when nothing is managed.
+ * - abiheal (every 15 minutes): reinstalls if-pppoe-kmod/os-if-pppoe left on the old
+ *   ABI by a major upgrade, if the start syshook's attempt did not get through.
  */
 function if_pppoe_cron()
 {
     return [
         ['autocron' => ['/usr/local/sbin/configctl -d if-pppoe reapply', '*/5']],
         ['autocron' => ['/usr/local/sbin/configctl -d if-pppoe reconcile', '*']],
+        ['autocron' => ['/usr/local/sbin/configctl -d if-pppoe abiheal cron', '*/15']],
     ];
 }

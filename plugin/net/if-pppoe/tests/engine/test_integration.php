@@ -193,6 +193,41 @@ T::test('contract: a boot that failed with the same desired state does not ask f
     T::ok(uiStatus($s)['reboot_required'], 're-applied after the failed boot');
 });
 
+T::test('contract: packages left on the old ABI by a major upgrade: reinstall advice, then the reboot once reinstalled', function () {
+    $s = new Sandbox('config-base.xml', false);
+    $s->write('/conf/if_pppoe/hook.json', json_encode(['status' => 'reverted']));
+    touch($s->root . '/conf/if_pppoe/desired', time() - 100);
+    /* booted the 26.7 (FreeBSD:15) kernel with the FreeBSD:14 if-pppoe-kmod: no .ko for it */
+    $s->sysctl('kern.build_id', Sandbox::NEW_BUILD_ID);
+    $s->packageAbi('FreeBSD:15:amd64', 'FreeBSD:14:amd64');
+    $s->bootFailed('kmod-abi-mismatch');
+    $r = uiStatus($s);
+    T::eq(['package' => 'if-pppoe-kmod', 'installed' => 'FreeBSD:14:amd64', 'system' => 'FreeBSD:15:amd64'], $r['package_abi']);
+    T::eq(false, $r['installed_eligible']);
+    T::contains('installed if-pppoe-kmod is built for FreeBSD:14:amd64 but this system is FreeBSD:15:amd64', $r['installed_reason']);
+    T::ok(!$r['reboot_required'], 'the same packages would fail the same way');
+    T::eq('Installed if-pppoe-kmod is built for FreeBSD:14:amd64 but this system is FreeBSD:15:amd64; reinstall it'
+        . ' (System: Firmware: Packages, reinstall if-pppoe-kmod and os-if-pppoe, or'
+        . ' pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe), then reboot.', $r['advice']);
+    /* abi-heal.sh reinstalled the FreeBSD:15 builds: new build_ids and a .ko for this kernel */
+    $s->packageAbi('FreeBSD:15:amd64', 'FreeBSD:15:amd64');
+    $s->installKoFor(Sandbox::NEW_BUILD_ID);
+    $r = uiStatus($s);
+    T::eq(null, $r['package_abi']);
+    T::eq(true, $r['installed_eligible'], $r['installed_reason']);
+    T::ok($r['reboot_required'], 'reinstalled since the failed boot: offer the reboot');
+    T::eq('Reboot to apply.', $r['advice']);
+});
+
+T::test('contract: an os-if-pppoe-only ABI mismatch is advised too', function () {
+    $s = new Sandbox('config-base.xml', false);
+    $s->write('/conf/if_pppoe/hook.json', json_encode(['status' => 'reverted']));
+    $s->packageAbi('FreeBSD:15:amd64', 'FreeBSD:15:amd64', 'FreeBSD:14:amd64');
+    $r = uiStatus($s);
+    T::eq('os-if-pppoe', $r['package_abi']['package'] ?? null);
+    T::contains('Installed os-if-pppoe is built for FreeBSD:14:amd64', (string)$r['advice']);
+});
+
 T::test('contract: a boot that failed on the kmod, then a fixed if-pppoe-kmod installed, asks for a reboot', function () {
     $s = new Sandbox('config-base.xml', false);
     $s->write('/conf/if_pppoe/hook.json', json_encode(['status' => 'reverted']));
@@ -364,7 +399,7 @@ T::test('contract: pkg trigger path is the directory holding interfaces.inc', fu
 
 /* ------------------------------------------------------------ F2 cron */
 
-T::test('contract: cron schedules hook reapply every 5 minutes and engine reconcile every minute', function () {
+T::test('contract: cron schedules hook reapply every 5 minutes, engine reconcile every minute, abiheal every 15', function () {
     if (!function_exists('if_pppoe_cron')) {
         require PLUGIN_SRC . '/etc/inc/plugins.inc.d/if_pppoe.inc';
     }
@@ -375,13 +410,20 @@ T::test('contract: cron schedules hook reapply every 5 minutes and engine reconc
     T::eq([
         '/usr/local/sbin/configctl -d if-pppoe reapply' => ['*/5'],
         '/usr/local/sbin/configctl -d if-pppoe reconcile' => ['*'],
+        '/usr/local/sbin/configctl -d if-pppoe abiheal cron' => ['*/15'],
     ], $jobs);
     $a = actions();
     T::eq('/bin/sh /usr/local/opnsense/scripts/if_pppoe/reapply.sh', $a['reapply']['command']);
     T::eq('cron', $a['reapply']['parameters']);
     T::eq('/usr/local/opnsense/scripts/if_pppoe/engine', $a['reconcile']['command']);
     T::eq('reconcile', $a['reconcile']['parameters']);
-    foreach (['reapply.sh', 'engine'] as $f) {
+    T::eq('/bin/sh /usr/local/opnsense/scripts/if_pppoe/abi-heal.sh', $a['abiheal']['command']);
+    T::eq('%s', $a['abiheal']['parameters']);
+    /* the update syshook and the pkg trigger name the same action and mode */
+    foreach (['/etc/rc.syshook.d/update/05-if-pppoe', '/share/pkg/triggers/if_pppoe.ucl'] as $f) {
+        T::ok(preg_match('/configctl.*-d.*if-pppoe.*abiheal.*deferred/i', (string)file_get_contents(PLUGIN_SRC . $f)) === 1, "$f defers abiheal");
+    }
+    foreach (['reapply.sh', 'engine', 'abi-heal.sh'] as $f) {
         T::ok(is_file(PLUGIN_SRC . '/opnsense/scripts/if_pppoe/' . $f), "$f shipped");
     }
 });
@@ -476,4 +518,20 @@ T::test('contract: an older kmod without kernels.json shows supported kernels as
     T::eq(null, $r['supported_kernels']);
     T::eq(true, $r['running_kernel']['covered']);
     T::eq(null, $r['advice']);
+});
+
+T::test('Kernel::packageAbiMismatch: no pkg, matching, wildcard and mismatched ABIs', function () {
+    $s = new Sandbox();
+    $k = fn() => new \IfPppoe\Engine\Kernel($s->env(), new \IfPppoe\Engine\Proc());
+    T::eq(null, $k()->packageAbiMismatch(), 'pkg unavailable');
+    $s->packageAbi('FreeBSD:15:amd64', 'FreeBSD:15:amd64');
+    T::eq(null, $k()->packageAbiMismatch(), 'same ABI');
+    $s->packageAbi('FreeBSD:15:amd64', 'FreeBSD:15:amd64', 'FreeBSD:15:*');
+    T::eq(null, $k()->packageAbiMismatch(), 'arch-independent package');
+    $s->packageAbi('FreeBSD:15:amd64', 'FreeBSD:14:amd64');
+    T::eq(['package' => 'if-pppoe-kmod', 'installed' => 'FreeBSD:14:amd64', 'system' => 'FreeBSD:15:amd64'], $k()->packageAbiMismatch());
+    $s->packageAbi('FreeBSD:15:amd64', 'Free BSD;rm');
+    T::eq(null, $k()->packageAbiMismatch(), 'unparseable %q is ignored');
+    $s->fakeJson('pkg.json', ['abi' => 'FreeBSD:15:amd64', 'installed' => []]);
+    T::eq(null, $k()->packageAbiMismatch(), 'packages not installed');
 });

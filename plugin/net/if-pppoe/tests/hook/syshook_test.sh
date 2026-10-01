@@ -1,6 +1,6 @@
 #!/bin/sh
-# early/start/update syshooks and reapply.sh against a fake /conf, /var/run
-# and stubbed kldload/kldstat/kldunload/sysctl/hookctl/configctl/ifconfig.
+# early/start/update syshooks, reapply.sh and abi-heal.sh against a fake /conf, /var/run
+# and stubbed kldload/kldstat/kldunload/sysctl/hookctl/configctl/ifconfig/pkg.
 # The last block runs the real hookctl.php (needs PHP) on a fixture copy.
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -41,10 +41,15 @@ setup()
 	export IF_PPPOE_TIMEOUT="${S}/bin/timeout"
 	export IF_PPPOE_FLOCK="${S}/bin/flock"
 	export IF_PPPOE_FW_LOCK="${S}/pkg_upgrade.progress"
+	export IF_PPPOE_PKG="${S}/bin/pkg"
+	export IF_PPPOE_DAEMON="${S}/bin/daemon"
+	export IF_PPPOE_PGREP="${S}/bin/pgrep"
+	export IF_PPPOE_SLEEP="${S}/bin/sleep"
+	unset IF_PPPOE_HEAL_BG IF_PPPOE_HEAL_LOCKED
 	export IF_PPPOE_NOW=1000000
 	export ST="${S}/state"
 	mkdir -p "${IF_PPPOE_SCRIPTS}"
-	cp "${SRC}/opnsense/scripts/if_pppoe/reapply.sh" "${IF_PPPOE_SCRIPTS}/"
+	cp "${SRC}/opnsense/scripts/if_pppoe/reapply.sh" "${SRC}/opnsense/scripts/if_pppoe/abi-heal.sh" "${IF_PPPOE_SCRIPTS}/"
 	: > "${S}/kmod/${BID}/if_pppoe.ko"
 	echo "${BID}" > "${IF_PPPOE_BUILD_IDS}"
 	printf 'if_pppoe_%s\n' linkevents ipv6 mssfix pfil_pass_foreign single_bytecount > "${IF_PPPOE_FEATURES_FILE}"
@@ -66,7 +71,30 @@ setup()
 	stub ifconfig 'echo "ifconfig $*" >> "$ST/calls"'
 	stub configctl 'echo "configctl $*" >> "$ST/calls"'
 	stub timeout 'shift 3; "$@"'
-	stub flock '[ -f "$ST/fwbusy" ] && exit 1; exit 0'
+	# flock -n <file> [cmd...]: the firmware lock is held while $ST/fwbusy exists, the heal lock while $ST/heallocked does
+	stub flock 'shift; f=$1; shift
+case "$f" in *pkg_upgrade.progress) [ -f "$ST/fwbusy" ] && exit 1 ;; *abi-heal.lock) [ -f "$ST/heallocked" ] && exit 1 ;; esac
+[ $# -gt 0 ] && exec "$@"; exit 0'
+	stub daemon '[ "$1" = -f ] && shift; echo "daemon $*" >> "$ST/pkgcalls"; exec "$@"'
+	stub pgrep '[ -f "$ST/pkgbusy" ]'
+	stub sleep 'echo "sleep $*" >> "$ST/pkgcalls"; rm -f "$ST/pkgbusy"'
+	# pkg: system ABI in $ST/abi, installed package ABIs in $ST/pkgabi.<name> (absent =
+	# not installed), the IfPppoe catalogue in $ST/repoabi.<name>; calls to $ST/pkgcalls
+	stub pkg 'echo "pkg $*" >> "$ST/pkgcalls"
+case "$1" in
+config) cat "$ST/abi" ;;
+query) [ -f "$ST/pkgabi.$3" ] || exit 1; if [ "$2" = %n ]; then echo "$3"; else cat "$ST/pkgabi.$3"; fi ;;
+update) [ -f "$ST/pkg.update.rc" ] && exit "$(cat "$ST/pkg.update.rc")"; exit 0 ;;
+rquery) for n; do :; done; [ -f "$ST/repoabi.$n" ] && cat "$ST/repoabi.$n"; exit 0 ;;
+install) [ -f "$ST/pkg.install.rc" ] && exit "$(cat "$ST/pkg.install.rc")"
+	for n; do [ -f "$ST/repoabi.$n" ] && cp "$ST/repoabi.$n" "$ST/pkgabi.$n"; done; exit 0 ;;
+*) exit 1 ;;
+esac'
+	echo FreeBSD:15:amd64 > "${ST}/abi"
+	for p in if-pppoe-kmod os-if-pppoe; do
+		echo FreeBSD:15:amd64 > "${ST}/pkgabi.${p}"
+		echo FreeBSD:15:amd64 > "${ST}/repoabi.${p}"
+	done
 	# engine: exit code from $ST/engine.<subcommand>.rc (default 0)
 	stub engine 'echo "engine $*" >> "$ST/calls"; [ -f "$ST/engine.$1.rc" ] && exit $(cat "$ST/engine.$1.rc"); exit 0'
 	cp "${S}/bin/engine" "${IF_PPPOE_SCRIPTS}/engine"
@@ -244,7 +272,8 @@ echo applied > "${ST}/hookctl.apply.out"
 sh "${UPDATE}"; rc=$?
 eq "update: exit 0" "${rc}" 0
 contains "update: hookctl apply --reapply --reason=update" "$(calls)" "hookctl apply --reapply --reason=update"
-check "update ok: no fallback" test "$(calls | grep -c configctl)" -eq 0
+check "update ok: no fallback" test "$(calls | grep -v abiheal | grep -c configctl)" -eq 0
+contains "update: ABI check handed to configd" "$(calls)" "configctl -d if-pppoe abiheal deferred"
 
 upd_refused_setup()
 {
@@ -263,7 +292,7 @@ upd_refused_setup upd-refused-engine
 sh "${UPDATE}"; rc=$?
 eq "update refused: exit 0 (engine path)" "${rc}" 0
 contains "update refused: engine reconcile --after-firmware" "$(calls)" "engine reconcile --after-firmware"
-check "update refused, engine ok: no shell teardown" test "$(calls | grep -c -e 'ifconfig' -e 'engine reset' -e configctl)" -eq 0
+check "update refused, engine ok: no shell teardown" test "$(calls | grep -v abiheal | grep -c -e 'ifconfig' -e 'engine reset' -e configctl)" -eq 0
 check "update refused, engine ok: notice" test -s "${IF_PPPOE_RUN_DIR}/notice.d/update-fallback"
 
 # engine missing
@@ -327,6 +356,141 @@ check "cron during firmware run: skipped" test "$(calls | grep -c hookctl)" -eq 
 rm -f "${ST}/fwbusy"
 sh "${IF_PPPOE_SCRIPTS}/reapply.sh" cron >/dev/null
 contains "cron when idle: reapply" "$(calls)" "hookctl apply --reapply --reason=cron"
+
+# --- ABI change (OPNsense major upgrade) -----------------------------------
+HEAL="${SRC}/opnsense/scripts/if_pppoe/abi-heal.sh"
+INSTALL_CALL="pkg install -f -y -U -r IfPppoe if-pppoe-kmod os-if-pppoe"
+
+old_abi()
+{
+	# packages still the FreeBSD:14 build, booted into the 26.7 (FreeBSD:15) kernel
+	setup "$1"
+	echo FreeBSD:14:amd64 > "${ST}/pkgabi.if-pppoe-kmod"
+	echo FreeBSD:14:amd64 > "${ST}/pkgabi.os-if-pppoe"
+	echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"
+}
+
+pkgcalls()
+{
+	cat "${ST}/pkgcalls" 2>/dev/null
+}
+
+heal_result()
+{
+	sed -n 's/.*"result":"\([^"]*\)".*/\1/p' "${S}/conf/abi-heal.json" 2>/dev/null
+}
+
+old_abi abi-early
+eq "old-ABI kmod: exit 0" "$(early)" 0
+eq "old-ABI kmod: distinct boot reason" "$(bootres)" "failed:kmod-abi-mismatch"
+contains "old-ABI kmod: notice names both ABIs" "$(cat "${IF_PPPOE_RUN_DIR}/notice.d/boot-failed")" \
+    "installed if-pppoe-kmod is built for FreeBSD:14:amd64 but this system is FreeBSD:15:amd64"
+contains "old-ABI kmod: boot.json carries the kmod identity" "$(cat "${IF_PPPOE_RUN_DIR}/boot.json")" '"kmod":{'
+check "old-ABI kmod: early boot never installs" test "$(pkgcalls | grep -c -e 'pkg install' -e 'pkg update')" -eq 0
+check "old-ABI kmod: boot.json is valid JSON" "${REAL_PHP:-php}" -r 'exit(is_array(json_decode(file_get_contents($argv[1]), true)) ? 0 : 1);' "${IF_PPPOE_RUN_DIR}/boot.json"
+
+setup abi-early-match
+echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"
+early >/dev/null
+eq "matching ABI, unknown kernel: still kernel-not-supported" "$(bootres)" "failed:kernel-not-supported"
+
+old_abi abi-heal-now
+sh "${HEAL}" now > "${ST}/out" 2>&1; rc=$?
+eq "heal: exit 0" "${rc}" 0
+eq "heal: pkg install -f exactly once" "$(pkgcalls | grep -c 'pkg install')" 1
+contains "heal: reinstalls both from IfPppoe" "$(pkgcalls)" "${INSTALL_CALL}"
+contains "heal: refreshes the IfPppoe catalogue first" "$(pkgcalls)" "pkg update -f -r IfPppoe"
+check "heal: never removes a package" test "$(pkgcalls | grep -c -e 'pkg delete' -e 'pkg remove' -e 'autoremove')" -eq 0
+eq "heal: recorded" "$(heal_result)" "healed"
+contains "heal: reboot notice" "$(cat "${IF_PPPOE_RUN_DIR}/notice.d/abi-reboot")" "reboot to arm kernel PPPoE"
+check "heal: no problem notice" test ! -f "${IF_PPPOE_RUN_DIR}/notice.d/abi-heal"
+: > "${ST}/pkgcalls"
+sh "${HEAL}" now >/dev/null 2>&1
+eq "heal again after success: no-op" "$(pkgcalls | grep -c -e 'pkg install' -e 'pkg update')" 0
+early >/dev/null
+check "next boot clears the reboot notice" test ! -f "${IF_PPPOE_RUN_DIR}/notice.d/abi-reboot"
+
+setup abi-heal-match
+for m in now cron boot deferred; do
+	sh "${HEAL}" "${m}" >/dev/null 2>&1
+done
+eq "matching ABI: no pkg update/install in any mode" "$(pkgcalls | grep -c -e 'pkg install' -e 'pkg update')" 0
+check "matching ABI: nothing recorded" test ! -f "${S}/conf/abi-heal.json"
+
+old_abi abi-heal-norepo
+echo 3 > "${ST}/pkg.update.rc"   # no FreeBSD:15:amd64 directory in the repository (404)
+sh "${HEAL}" now >/dev/null 2>&1
+eq "repo lacks the ABI (catalogue fetch fails): no install" "$(pkgcalls | grep -c 'pkg install')" 0
+eq "repo lacks the ABI: recorded" "$(heal_result)" "unreachable"
+contains "repo lacks the ABI: notice keeps mpd5" "$(cat "${IF_PPPOE_RUN_DIR}/notice.d/abi-heal")" "mpd5 stays in use"
+
+old_abi abi-heal-wrongcat
+echo FreeBSD:14:amd64 > "${ST}/repoabi.if-pppoe-kmod"   # catalogue offers only the old build
+sh "${HEAL}" now >/dev/null 2>&1
+eq "repo offers another ABI: refused, no install" "$(pkgcalls | grep -c 'pkg install')" 0
+eq "repo offers another ABI: recorded" "$(heal_result)" "refused"
+contains "repo offers another ABI: notice" "$(cat "${IF_PPPOE_RUN_DIR}/notice.d/abi-heal")" "has no FreeBSD:15:amd64 build of if-pppoe-kmod"
+: > "${ST}/pkgcalls"
+IF_PPPOE_NOW=1000600 sh "${HEAL}" cron >/dev/null 2>&1
+eq "cron within the hour after a refusal: no retry" "$(pkgcalls | grep -c 'pkg update')" 0
+IF_PPPOE_NOW=1003700 sh "${HEAL}" cron >/dev/null 2>&1
+eq "cron an hour later: retries" "$(pkgcalls | grep -c 'pkg update')" 1
+echo FreeBSD:15:amd64 > "${ST}/repoabi.if-pppoe-kmod"
+IF_PPPOE_NOW=1003800 sh "${HEAL}" now >/dev/null 2>&1
+eq "build published: healed" "$(heal_result)" "healed"
+check "build published: problem notice cleared" test ! -f "${IF_PPPOE_RUN_DIR}/notice.d/abi-heal"
+
+old_abi abi-heal-installfail
+echo 1 > "${ST}/pkg.install.rc"
+sh "${HEAL}" now >/dev/null 2>&1
+eq "pkg install fails: recorded" "$(heal_result)" "failed"
+check "pkg install fails: no reboot notice" test ! -f "${IF_PPPOE_RUN_DIR}/notice.d/abi-reboot"
+contains "pkg install fails: manual command in the notice" "$(cat "${IF_PPPOE_RUN_DIR}/notice.d/abi-heal")" "pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe"
+
+old_abi abi-heal-kmodonly
+rm -f "${ST}/pkgabi.os-if-pppoe"   # only if-pppoe-kmod installed
+sh "${HEAL}" now >/dev/null 2>&1
+contains "only the kmod installed: reinstalls only it" "$(pkgcalls)" "pkg install -f -y -U -r IfPppoe if-pppoe-kmod"
+check "only the kmod installed: never installs os-if-pppoe" test "$(pkgcalls | grep 'pkg install' | grep -c os-if-pppoe)" -eq 0
+
+old_abi abi-heal-fwbusy
+touch "${ST}/fwbusy" "${IF_PPPOE_FW_LOCK}"
+sh "${HEAL}" now >/dev/null 2>&1
+eq "firmware run in progress: no pkg update/install" "$(pkgcalls | grep -c -e 'pkg install' -e 'pkg update')" 0
+
+old_abi abi-heal-locked
+touch "${ST}/heallocked"
+sh "${HEAL}" now >/dev/null 2>&1
+eq "another heal running: nothing" "$(pkgcalls | grep -c -e 'pkg install' -e 'pkg update')" 0
+
+old_abi abi-heal-deferred
+touch "${ST}/pkgbusy"   # pkg still running; the sleep stub ends it
+sh "${HEAL}" deferred >/dev/null 2>&1
+contains "deferred: detaches via daemon" "$(pkgcalls)" "daemon /bin/sh"
+contains "deferred: waits while pkg runs" "$(pkgcalls)" "sleep 10"
+eq "deferred: then installs once" "$(pkgcalls | grep -c 'pkg install')" 1
+
+old_abi abi-heal-boot-retry
+echo 3 > "${ST}/pkg.update.rc"
+IF_PPPOE_HEAL_TRIES=3 sh "${HEAL}" boot >/dev/null 2>&1
+eq "boot: retries while the repository is unreachable" "$(pkgcalls | grep -c 'pkg update')" 3
+eq "boot: sleeps between tries" "$(pkgcalls | grep -c "sleep 30")" 2
+eq "boot: never installs without a catalogue" "$(pkgcalls | grep -c 'pkg install')" 0
+
+old_abi abi-start
+sh "${START}" >/dev/null 2>&1
+contains "start syshook: old ABI is reinstalled" "$(pkgcalls)" "${INSTALL_CALL}"
+eq "start syshook: recorded" "$(heal_result)" "healed"
+setup abi-start-match
+sh "${START}" >/dev/null 2>&1
+check "start syshook, matching ABI: no heal started" test "$(pkgcalls | grep -c -e daemon -e 'pkg update')" -eq 0
+
+old_abi abi-nopkg
+export IF_PPPOE_PKG=""
+early >/dev/null
+eq "no package database: plain kernel-not-supported" "$(bootres)" "failed:kernel-not-supported"
+sh "${HEAL}" now >/dev/null 2>&1; rc=$?
+eq "no package database: heal exits 0" "${rc}" 0
 
 # --- uninstall.sh (pkg delete) -------------------------------------------
 UNINSTALL="${SRC}/opnsense/scripts/if_pppoe/uninstall.sh"

@@ -199,6 +199,7 @@ final class Env
             'linkdown' => '/usr/local/opnsense/scripts/interfaces/ppp-linkdown.sh',
             'hookctl' => '/usr/local/opnsense/scripts/if_pppoe/hookctl.php',
             'php' => '/usr/local/bin/php',
+            'pkg' => '/usr/local/sbin/pkg',
         ];
         if (!isset($map[$name])) {
             throw new \InvalidArgumentException("unknown binary {$name}");
