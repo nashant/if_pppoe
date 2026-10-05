@@ -122,8 +122,9 @@ heal()
 
 	# the repository URL ends in ${ABI} (gen-repo-conf.sh), so this fetches the
 	# catalogue for the new ABI; it fails when that directory does not exist
-	if ! out=$(${IF_PPPOE_PKG} update -f -r "${IF_PPPOE_REPO}" 2>&1); then
-		ifp_log "abi-heal: pkg update -r ${IF_PPPOE_REPO} failed: $(echo "${out}" | tail -n 1)" warning
+	# shellcheck disable=SC2086
+	if ! to_out ${IF_PPPOE_PKG} update -f -r "${IF_PPPOE_REPO}"; then
+		ifp_log "abi-heal: pkg update -r ${IF_PPPOE_REPO} failed: $(out_tail)" warning
 		record unreachable "${from}" "${to}"
 		ifp_notice abi-heal "installed if-pppoe-kmod is built for ${from} but this system is ${to}; the ${IF_PPPOE_REPO} repository is unreachable or has no ${to} build, so mpd5 stays in use (retrying; or run: pkg install -f -r ${IF_PPPOE_REPO}${pkgs}, then reboot)"
 		return 1
@@ -147,13 +148,13 @@ heal()
 
 	ifp_log "abi-heal: reinstalling${pkgs} from ${IF_PPPOE_REPO}: installed for ${from}, system is ${to}"
 	# shellcheck disable=SC2086
-	if out=$(${IF_PPPOE_PKG} install -f -y -U -r "${IF_PPPOE_REPO}" ${pkgs} 2>&1) && ! ifp_abi_mismatch >/dev/null; then
+	if to_out ${IF_PPPOE_PKG} install -f -y -U -r "${IF_PPPOE_REPO}" ${pkgs} && ! ifp_abi_mismatch >/dev/null; then
 		record healed "${from}" "${to}"
 		ifp_notice_clear abi-heal
 		ifp_notice abi-reboot "reinstalled${pkgs} for ${to} (was ${from}); reboot to arm kernel PPPoE"
 		return 0
 	fi
-	ifp_log "abi-heal: pkg install failed: $(echo "${out}" | tail -n 1)" err
+	ifp_log "abi-heal: pkg install failed: $(out_tail)" err
 	record failed "${from}" "${to}"
 	ifp_notice abi-heal "installed if-pppoe-kmod is built for ${from} but this system is ${to}; reinstalling it failed, mpd5 stays in use (run: pkg install -f -r ${IF_PPPOE_REPO}${pkgs}, then reboot)"
 	return 0

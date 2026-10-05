@@ -99,7 +99,7 @@ case "$1" in
 config) cat "$ST/abi" ;;
 query) [ -f "$ST/pkgabi.$3" ] || exit 1
 	case "$2" in %n) echo "$3" ;; %v) cat "$ST/pkgver.$3" 2>/dev/null || echo 0.5 ;; *) cat "$ST/pkgabi.$3" ;; esac ;;
-update) [ -f "$ST/pkg.update.rc" ] && exit "$(cat "$ST/pkg.update.rc")"; exit 0 ;;
+update) [ -f "$ST/pkg.update.rc" ] && { echo "pkg: update failed (stub)" >&2; exit "$(cat "$ST/pkg.update.rc")"; }; exit 0 ;;
 fetch) [ -f "$ST/pkg.fetch.rc" ] && exit "$(cat "$ST/pkg.fetch.rc")"
 	shift; d=""; while [ $# -gt 0 ]; do case "$1" in -o) d=$2; shift ;; -r) shift ;; -*) ;; *) : > "$d/$1-0.5.pkg" ;; esac; shift; done; exit 0 ;;
 rquery) for n; do :; done
@@ -424,6 +424,15 @@ echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"
 early >/dev/null
 eq "matching ABI, unknown kernel: still kernel-not-supported" "$(bootres)" "failed:kernel-not-supported"
 
+# a daemon the install (re)starts keeps its stdout/stderr: the heal must not wait for it
+old_abi abi-heal-daemon
+touch "${ST}/pkg.install.daemon"
+t0=$(date +%s)
+sh "${HEAL}" now >/dev/null 2>&1; rc=$?
+eq "heal, install leaves a daemon holding its output: exit 0" "${rc}" 0
+check "heal, install leaves a daemon holding its output: not waited for" test $(($(date +%s) - t0)) -lt 15
+eq "heal, install leaves a daemon holding its output: recorded" "$(heal_result)" "healed"
+
 old_abi abi-heal-now
 sh "${HEAL}" now > "${ST}/out" 2>&1; rc=$?
 eq "heal: exit 0" "${rc}" 0
@@ -452,6 +461,7 @@ echo 3 > "${ST}/pkg.update.rc"   # no FreeBSD:15:amd64 directory in the reposito
 sh "${HEAL}" now >/dev/null 2>&1
 eq "repo lacks the ABI (catalogue fetch fails): no install" "$(pkgcalls | grep -c 'pkg install')" 0
 eq "repo lacks the ABI: recorded" "$(heal_result)" "unreachable"
+contains "repo lacks the ABI: pkg's last line logged" "$(cat "${ST}/log")" "pkg update -r IfPppoe failed: pkg: update failed (stub)"
 contains "repo lacks the ABI: notice keeps mpd5" "$(cat "${IF_PPPOE_RUN_DIR}/notice.d/abi-heal")" "mpd5 stays in use"
 
 old_abi abi-heal-wrongcat
