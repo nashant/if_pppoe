@@ -127,6 +127,12 @@ function ifpppoe_render_kernels(data) {
         $("#ifpppoe_supported_kernels").text(data.engine_available
             ? '{{ lang._("unknown (this if-pppoe-kmod does not list them)") }}' : '{{ lang._("unknown") }}');
     }
+    let abi = data.package_abi;
+    if (abi) {
+        // kernels.json comes from the installed (wrong-ABI) if-pppoe-kmod
+        $("#ifpppoe_supported_kernels").append($('<div>').addClass('text-warning').text(
+            '{{ lang._("listed by the installed") }} ' + abi.installed + ' {{ lang._("build; this system is") }} ' + abi.system));
+    }
     let covered = function(k) {
         return k.covered ? '{{ lang._("covered") }}' : '{{ lang._("not covered") }}';
     };

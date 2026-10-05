@@ -27,6 +27,12 @@ runbook — package install and the kernel-variant rule, Tunables, the
 Services → In-kernel PPPoE toggle page, shaping/ALTQ caveats, counters and
 troubleshooting, and rollback to mpd5.
 
+After an OPNsense major upgrade (for example 26.1 -> 26.7), the plugin's
+packages stay on the old FreeBSD ABI until they are reinstalled. The plugin
+does that by itself once the box is back online and then asks for a reboot.
+By hand: `pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe`, then reboot
+(see [docs/plugin/INSTALL.md](docs/plugin/INSTALL.md#opnsense-major-upgrades-257261---267)).
+
 ## Layout
 
 - `lab/` — Makefile and scripts to bring up the VM/netns test lab.

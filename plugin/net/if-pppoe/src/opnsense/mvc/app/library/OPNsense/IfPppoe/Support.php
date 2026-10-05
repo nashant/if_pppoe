@@ -94,6 +94,8 @@ class Support
      *   reboot_required, apply_pending   bool, computed by the engine only
      *   installed_eligible, installed_reason   whether *enabling* would work
      *                        after a reboot, from the installed (not necessarily loaded) kmod
+     *   package_abi  {package, installed, system}|null: an installed plugin package built
+     *                 for another ABI (left behind by a major upgrade, Kernel::packageAbiMismatch())
      *   kernels      {supported: [{version, series, build_id}]|null, running: {build_id,
      *                 version, covered}, installed: {build_id, version, covered,
      *                 pending_reboot}, upgrade: {version, covered: bool|null}|null}
@@ -127,6 +129,7 @@ class Support
             'reboot_required' => false,
             'installed_eligible' => true,
             'installed_reason' => '',
+            'package_abi' => null,
             'apply_pending' => false,
             'supported_kernels' => null,
             'running_kernel' => null,
@@ -160,6 +163,10 @@ class Support
         $out['reboot_required'] = ($engine['reboot_required'] ?? false) === true;
         $out['installed_eligible'] = ($engine['installed_eligible'] ?? true) === true;
         $out['installed_reason'] = (string)($engine['installed_reason'] ?? '');
+        $abi = $engine['package_abi'] ?? null;
+        if (is_array($abi) && is_string($abi['package'] ?? null) && is_string($abi['installed'] ?? null) && is_string($abi['system'] ?? null)) {
+            $out['package_abi'] = ['package' => $abi['package'], 'installed' => $abi['installed'], 'system' => $abi['system']];
+        }
         if (is_array($engine['settings'] ?? null)) {
             $out['apply_pending'] = ($engine['apply_pending'] ?? false) === true;
         } else {
@@ -255,7 +262,7 @@ class Support
 
     /**
      * The one thing the user should do next, or null. Untranslated (the view
-     * shows it as-is). Order: unsaved Apply, latch, refusal, pause, reboot,
+     * shows it as-is). Order: unsaved Apply, latch, refusal, pause, wrong-ABI packages, reboot,
      * an installed-but-not-booted kernel the kmod does not cover, failed boot.
      */
     private static function advice(array $s): ?string
@@ -271,6 +278,13 @@ class Support
         }
         if ($s['paused'] && !$s['reboot_required'] && $s['persisted'] === 'enabled') {
             return 'Core was reinstalled: Save and Apply, then reboot to resume kernel mode.';
+        }
+        $abi = $s['package_abi'];
+        if ($abi !== null) {
+            /* a reboot cannot help until the right build is installed (abi-heal.sh tries on its own) */
+            return "Installed {$abi['package']} is built for {$abi['installed']} but this system is {$abi['system']}; reinstall it"
+                . ' (System: Firmware: Packages, reinstall if-pppoe-kmod and os-if-pppoe, or'
+                . ' pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe), then reboot.';
         }
         if ($s['reboot_required']) {
             /* installed_eligible only speaks to *enabling*; reboot_required also fires for

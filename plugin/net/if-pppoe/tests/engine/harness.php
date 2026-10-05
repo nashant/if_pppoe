@@ -78,7 +78,7 @@ final class Sandbox
 {
     public const BINS = [
         '/sbin/ifconfig', '/sbin/sysctl', '/usr/local/sbin/pppoectl', '/usr/local/sbin/configctl',
-        '/usr/bin/logger', '/bin/pgrep', '/usr/sbin/daemon',
+        '/usr/bin/logger', '/bin/pgrep', '/usr/sbin/daemon', '/usr/local/sbin/pkg',
         '/usr/local/opnsense/scripts/interfaces/ppp-linkup.sh',
         '/usr/local/opnsense/scripts/interfaces/ppp-linkdown.sh',
     ];
@@ -131,6 +131,12 @@ final class Sandbox
 
     /** a second kernel build-id (even length, so it fits in a synthetic ELF note) */
     public const NEW_BUILD_ID = '0f1e2d3c4b5a69788796a5b4c3d2e1f00112233a';
+
+    /** the package database: `pkg config abi` and each installed plugin package's %q */
+    public function packageAbi(string $system, string $kmod, ?string $plugin = null): void
+    {
+        $this->fakeJson('pkg.json', ['abi' => $system, 'installed' => ['if-pppoe-kmod' => $kmod, 'os-if-pppoe' => $plugin ?? $kmod]]);
+    }
 
     /** sets one fake sysctl value (e.g. kern.build_id) */
     public function sysctl(string $name, string $value): void
