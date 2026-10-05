@@ -1,5 +1,5 @@
 #!/bin/sh
-# early/start/update syshooks, reapply.sh and abi-heal.sh against a fake /conf, /var/run
+# early/start/update/upgrade syshooks, reapply.sh and abi-heal.sh against a fake /conf, /var/run
 # and stubbed kldload/kldstat/kldunload/sysctl/hookctl/configctl/ifconfig/pkg.
 # The last block runs the real hookctl.php (needs PHP) on a fixture copy.
 set -u
@@ -8,6 +8,7 @@ set -u
 EARLY="${SRC}/etc/rc.syshook.d/early/50-if-pppoe"
 START="${SRC}/etc/rc.syshook.d/start/50-if-pppoe"
 UPDATE="${SRC}/etc/rc.syshook.d/update/05-if-pppoe"
+UPGRADE="${SRC}/etc/rc.syshook.d/upgrade/50-if-pppoe"
 BID=3f1c2a9b0d4e5f60718293a4b5c6d7e8f9a0b1c2
 
 stub()
@@ -45,6 +46,13 @@ setup()
 	export IF_PPPOE_DAEMON="${S}/bin/daemon"
 	export IF_PPPOE_PGREP="${S}/bin/pgrep"
 	export IF_PPPOE_SLEEP="${S}/bin/sleep"
+	export IF_PPPOE_TAR="${S}/bin/tar"
+	export IF_PPPOE_FETCH="${S}/bin/fetch"
+	export IF_PPPOE_UPGRADE_DIR="${S}/upd"
+	export IF_PPPOE_PREFETCH_DIR="${S}/prefetch"
+	export IF_PPPOE_REPO_CONF="${S}/IfPppoe.conf"
+	export IF_PPPOE_VERSION_DIR="${S}/version"
+	export IF_PPPOE_PKG_DBDIR="${S}/pkgdb"
 	unset IF_PPPOE_HEAL_BG IF_PPPOE_HEAL_LOCKED
 	export IF_PPPOE_NOW=1000000
 	export ST="${S}/state"
@@ -70,27 +78,49 @@ setup()
 	echo reverted > "${ST}/hookctl.revert.out"
 	stub ifconfig 'echo "ifconfig $*" >> "$ST/calls"'
 	stub configctl 'echo "configctl $*" >> "$ST/calls"'
-	stub timeout 'shift 3; "$@"'
-	# flock -n <file> [cmd...]: the firmware lock is held while $ST/fwbusy exists, the heal lock while $ST/heallocked does
-	stub flock 'shift; f=$1; shift
+	# timeout [--foreground] -k <s> <s> <cmd...>: logged to $ST/timeouts, then runs <cmd...> unbounded
+	# shellcheck disable=SC2016
+	stub timeout 'echo "timeout $*" >> "$ST/timeouts"; while :; do case $1 in --foreground) shift ;; -k) shift 2 ;; *) break ;; esac; done; shift; "$@"'
+	# flock -n|-w <s> <file> [cmd...]: the firmware lock is held while $ST/fwbusy exists, the heal lock while $ST/heallocked does
+	stub flock 'echo "flock $*" >> "$ST/flocks"; while :; do case "$1" in -w) shift 2 ;; -*) shift ;; *) break ;; esac; done; f=$1; shift
 case "$f" in *pkg_upgrade.progress) [ -f "$ST/fwbusy" ] && exit 1 ;; *abi-heal.lock) [ -f "$ST/heallocked" ] && exit 1 ;; esac
 [ $# -gt 0 ] && exec "$@"; exit 0'
 	stub daemon '[ "$1" = -f ] && shift; echo "daemon $*" >> "$ST/pkgcalls"; exec "$@"'
 	stub pgrep '[ -f "$ST/pkgbusy" ]'
 	stub sleep 'echo "sleep $*" >> "$ST/pkgcalls"; rm -f "$ST/pkgbusy"'
 	# pkg: system ABI in $ST/abi, installed package ABIs in $ST/pkgabi.<name> (absent =
-	# not installed), the IfPppoe catalogue in $ST/repoabi.<name>; calls to $ST/pkgcalls
+	# not installed), the IfPppoe catalogue in $ST/repoabi.<name>; versions (default 0.5) in
+	# $ST/pkgver.<name> / $ST/repover.<name>, compared by version -t; calls to $ST/pkgcalls
+	# global options are skipped; the IfPppoe.conf a -R dir holds is appended to $ST/repoconfs;
+	# fetch -o <dir> creates <dir>/<name>-0.5.pkg
 	stub pkg 'echo "pkg $*" >> "$ST/pkgcalls"
+while :; do case "$1" in -R) cat "$2/IfPppoe.conf" >> "$ST/repoconfs"; shift 2 ;; -o) shift 2 ;; *) break ;; esac; done
 case "$1" in
 config) cat "$ST/abi" ;;
-query) [ -f "$ST/pkgabi.$3" ] || exit 1; if [ "$2" = %n ]; then echo "$3"; else cat "$ST/pkgabi.$3"; fi ;;
+query) [ -f "$ST/pkgabi.$3" ] || exit 1
+	case "$2" in %n) echo "$3" ;; %v) cat "$ST/pkgver.$3" 2>/dev/null || echo 0.5 ;; *) cat "$ST/pkgabi.$3" ;; esac ;;
 update) [ -f "$ST/pkg.update.rc" ] && exit "$(cat "$ST/pkg.update.rc")"; exit 0 ;;
-rquery) for n; do :; done; [ -f "$ST/repoabi.$n" ] && cat "$ST/repoabi.$n"; exit 0 ;;
+fetch) [ -f "$ST/pkg.fetch.rc" ] && exit "$(cat "$ST/pkg.fetch.rc")"
+	shift; d=""; while [ $# -gt 0 ]; do case "$1" in -o) d=$2; shift ;; -r) shift ;; -*) ;; *) : > "$d/$1-0.5.pkg" ;; esac; shift; done; exit 0 ;;
+rquery) for n; do :; done
+	case " $* " in *" %v "*) cat "$ST/repover.$n" 2>/dev/null || echo 0.5 ;; *) [ -f "$ST/repoabi.$n" ] && cat "$ST/repoabi.$n" ;; esac; exit 0 ;;
+version) [ "$2" = -t ] || exit 1
+	if [ "$3" = "$4" ]; then echo "="; elif [ "$(printf "%s\n%s\n" "$3" "$4" | sort -V | head -n 1)" = "$3" ]; then echo "<"; else echo ">"; fi ;;
 install) [ -f "$ST/pkg.install.rc" ] && exit "$(cat "$ST/pkg.install.rc")"
+	[ -f "$ST/pkg.install.daemon" ] && /bin/sleep 30 &
 	for n; do [ -f "$ST/repoabi.$n" ] && cp "$ST/repoabi.$n" "$ST/pkgabi.$n"; done; exit 0 ;;
 *) exit 1 ;;
 esac'
+	# tar -xOf <set> ./.abi_hint: $ST/abihint.kernel or $ST/abihint.base, by set; fetch -o <file> <url>: creates <file>
+	stub tar 'echo "tar $*" >> "$ST/pkgcalls"; case "$*" in *kernel-*) s=kernel ;; *) s=base ;; esac; cat "$ST/abihint.$s" 2>/dev/null'
+	stub fetch 'echo "fetch $*" >> "$ST/pkgcalls"; [ -f "$ST/fetch.rc" ] && exit 1
+while [ $# -gt 0 ]; do [ "$1" = -o ] && { : > "$2"; shift; }; shift; done; exit 0'
+	# shellcheck disable=SC2016
+	printf '%s\n' 'IfPppoe: {' '    url: "https://repo.invalid/if_pppoe/${ABI}",' '    enabled: true,' \
+	    '    signature_type: "fingerprints",' '    fingerprints: "/usr/local/etc/pkg/fingerprints/IfPppoe"' '}' > "${IF_PPPOE_REPO_CONF}"
 	echo FreeBSD:15:amd64 > "${ST}/abi"
+	mkdir -p "${IF_PPPOE_VERSION_DIR}" "${IF_PPPOE_PKG_DBDIR}/repos/IfPppoe"
+	echo 26.7 > "${IF_PPPOE_VERSION_DIR}/pkgs"
 	for p in if-pppoe-kmod os-if-pppoe; do
 		echo FreeBSD:15:amd64 > "${ST}/pkgabi.${p}"
 		echo FreeBSD:15:amd64 > "${ST}/repoabi.${p}"
@@ -484,6 +514,235 @@ eq "start syshook: recorded" "$(heal_result)" "healed"
 setup abi-start-match
 sh "${START}" >/dev/null 2>&1
 check "start syshook, matching ABI: no heal started" test "$(pkgcalls | grep -c -e daemon -e 'pkg update')" -eq 0
+
+# --- prefetch before the major upgrade's reboot (upgrade syshook) ------------
+PF15="FreeBSD-15-amd64"
+
+staged()
+{
+	# 25.7 (FreeBSD:14) box, opnsense-update -u has staged the FreeBSD:15 sets
+	setup "$1"
+	echo FreeBSD:14:amd64 > "${ST}/abi"
+	echo FreeBSD:14:amd64 > "${ST}/pkgabi.if-pppoe-kmod"
+	echo FreeBSD:14:amd64 > "${ST}/pkgabi.os-if-pppoe"
+	mkdir -p "${IF_PPPOE_UPGRADE_DIR}/.sets.pending"
+	: > "${IF_PPPOE_UPGRADE_DIR}/.sets.pending/kernel-26.7-amd64.txz"
+	echo FreeBSD:15:amd64 > "${ST}/abihint.kernel"
+	echo 26.7 > "${IF_PPPOE_UPGRADE_DIR}/.kernel.pending"
+	echo 26.7 > "${IF_PPPOE_UPGRADE_DIR}/.base.pending"
+	echo 26.7 > "${IF_PPPOE_UPGRADE_DIR}/.pkgs.pending"
+}
+
+upgrade()
+{
+	sh "${UPGRADE}" > "${ST}/out" 2>&1
+	echo $?
+}
+
+staged pf-ok
+eq "prefetch: upgrade syshook exits 0" "$(upgrade)" 0
+for f in meta.conf data.pkg packagesite.pkg if-pppoe-kmod-0.5.pkg os-if-pppoe-0.5.pkg; do
+	check "prefetch: ${f} in the local repository" test -f "${IF_PPPOE_PREFETCH_DIR}/${PF15}/${f}"
+done
+eq "prefetch: completion marker records the release and ABI" "$(cat "${IF_PPPOE_PREFETCH_DIR}/${PF15}/.ready" 2>/dev/null)" "26.7 FreeBSD:15:amd64"
+eq "prefetch: meta (the pre-meta.conf scheme) not fetched" "$(pkgcalls | grep -c '/meta ')" 0
+contains "prefetch: bounded by timeout" "$(cat "${ST}/timeouts")" "timeout --foreground -k 10 300 /bin/sh ${IF_PPPOE_SCRIPTS}/abi-heal.sh prefetch"
+check "prefetch: work dir removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}/.work"
+contains "prefetch: target ABI from the staged kernel set's .abi_hint" "$(pkgcalls)" \
+    "tar -xqOf ${IF_PPPOE_UPGRADE_DIR}/.sets.pending/kernel-26.7-amd64.txz ./.abi_hint"
+ISO="-o ABI=FreeBSD:15:amd64 -o OSVERSION=1500000 -o IGNORE_OSVERSION=yes -o PKG_DBDIR=${IF_PPPOE_PREFETCH_DIR}/.work/db -o PKG_CACHEDIR=${IF_PPPOE_PREFETCH_DIR}/.work/cache"
+contains "prefetch: isolated catalogue update for the new ABI" "$(pkgcalls)" \
+    "pkg ${ISO} -R ${IF_PPPOE_PREFETCH_DIR}/.work/remote update -f -r IfPppoe"
+contains "prefetch: packages fetched into the local repository" "$(pkgcalls)" \
+    "pkg ${ISO} -R ${IF_PPPOE_PREFETCH_DIR}/.work/remote fetch -y -U -o ${IF_PPPOE_PREFETCH_DIR}/${PF15} -r IfPppoe if-pppoe-kmod os-if-pppoe"
+contains "prefetch: signed catalogue fetched for the new ABI" "$(pkgcalls)" \
+    "fetch -q -T 60 -o ${IF_PPPOE_PREFETCH_DIR}/${PF15}/meta.conf https://repo.invalid/if_pppoe/FreeBSD:15:amd64/meta.conf"
+contains "prefetch: read back as a file:// repository" "$(pkgcalls)" \
+    "pkg ${ISO} -R ${IF_PPPOE_PREFETCH_DIR}/.work/local update -f -r IfPppoe"
+eq "prefetch: every pkg call has its own database" "$(pkgcalls | grep '^pkg' | grep -v 'pkg config\|pkg query' | grep -vc 'PKG_DBDIR=')" 0
+check "prefetch: never installs" test "$(pkgcalls | grep -c 'pkg install')" -eq 0
+# shellcheck disable=SC2016
+contains "prefetch: remote conf keeps pkg's \${ABI}" "$(cat "${ST}/repoconfs")" 'url: "https://repo.invalid/if_pppoe/${ABI}",'
+contains "prefetch: local conf points at the prefetch" "$(cat "${ST}/repoconfs")" "url: \"file://${IF_PPPOE_PREFETCH_DIR}/${PF15}\","
+eq "prefetch: both confs keep the installed fingerprints" "$(grep -c 'fingerprints: "/usr/local/etc/pkg/fingerprints/IfPppoe"' "${ST}/repoconfs")" 4
+
+staged pf-same
+echo FreeBSD:14:amd64 > "${ST}/abihint.kernel"
+eq "prefetch, same ABI: exit 0" "$(upgrade)" 0
+eq "prefetch, same ABI: no pkg update/fetch" "$(pkgcalls | grep -c -e 'pkg.* update' -e 'pkg.* fetch' -e '^fetch')" 0
+check "prefetch, same ABI: nothing kept" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+
+staged pf-nosets
+rm -f "${IF_PPPOE_UPGRADE_DIR}/.sets.pending/kernel-26.7-amd64.txz"
+eq "prefetch, no staged sets: exit 0" "$(upgrade)" 0
+eq "prefetch, no staged sets: no pkg update" "$(pkgcalls | grep -c 'update')" 0
+
+staged pf-pkgfail
+echo 3 > "${ST}/pkg.update.rc"   # no FreeBSD:15:amd64 build published yet
+eq "prefetch, pkg update fails: exit 0" "$(upgrade)" 0
+check "prefetch, pkg update fails: no partial prefetch" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+contains "prefetch, pkg update fails: logged" "$(cat "${ST}/log")" "prefetch for FreeBSD:15:amd64 failed"
+
+staged pf-fetchfail
+touch "${ST}/fetch.rc"
+eq "prefetch, catalogue fetch fails: exit 0" "$(upgrade)" 0
+check "prefetch, catalogue fetch fails: no partial prefetch" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+
+staged pf-base
+rm -f "${IF_PPPOE_UPGRADE_DIR}/.sets.pending/kernel-26.7-amd64.txz" "${ST}/abihint.kernel"
+: > "${IF_PPPOE_UPGRADE_DIR}/.sets.pending/base-26.7-amd64.txz"
+echo FreeBSD:15:amd64 > "${ST}/abihint.base"
+eq "prefetch, base set only: exit 0" "$(upgrade)" 0
+contains "prefetch, base set only: ABI from the base set's .abi_hint" "$(pkgcalls)" \
+    "tar -xqOf ${IF_PPPOE_UPGRADE_DIR}/.sets.pending/base-26.7-amd64.txz ./.abi_hint"
+check "prefetch, base set only: ready" test -f "${IF_PPPOE_PREFETCH_DIR}/${PF15}/.ready"
+
+staged pf-norelease
+rm -f "${IF_PPPOE_UPGRADE_DIR}/.kernel.pending" "${IF_PPPOE_UPGRADE_DIR}/.base.pending"
+eq "prefetch, no staged release: exit 0" "$(upgrade)" 0
+eq "prefetch, no staged release: no pkg update" "$(pkgcalls | grep -c 'update')" 0
+check "prefetch, no staged release: nothing kept" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+
+staged pf-stale
+mkdir -p "${IF_PPPOE_PREFETCH_DIR}/${PF15}"
+: > "${IF_PPPOE_PREFETCH_DIR}/${PF15}/stale.pkg"
+upgrade >/dev/null
+check "prefetch: a stale partial prefetch is removed first" test ! -e "${IF_PPPOE_PREFETCH_DIR}/${PF15}/stale.pkg"
+
+staged pf-locked
+touch "${ST}/heallocked"
+eq "prefetch while a heal runs: exit 0" "$(upgrade)" 0
+contains "prefetch while a heal runs: waits for the lock" "$(cat "${ST}/flocks")" "flock -w 30 ${IF_PPPOE_RUN_DIR}/abi-heal.lock"
+contains "prefetch while a heal runs: warning logged" "$(cat "${ST}/log")" "user.warning -- abi-heal: prefetch skipped: another abi-heal.sh still holds"
+check "prefetch while a heal runs: nothing fetched" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+
+# a hung pkg is cut short by the timeout (scaled down here): the upgrade syshook still exits 0
+# and the partial prefetch has no marker, so the next boot ignores it
+if command -v timeout >/dev/null 2>&1; then
+	staged pf-hung
+	stub timeout 'while :; do case $1 in --foreground) shift ;; -k) shift 2 ;; *) break ;; esac; done; shift; exec timeout -k 1 2 "$@"'
+	stub fetch 'exec /bin/sleep 30'
+	t0=$(date +%s)
+	eq "prefetch, hung download: upgrade syshook exits 0" "$(upgrade)" 0
+	check "prefetch, hung download: bounded" test $(($(date +%s) - t0)) -lt 15
+	check "prefetch, hung download: no completion marker" test ! -e "${IF_PPPOE_PREFETCH_DIR}/${PF15}/.ready"
+fi
+
+# --- offline install on the first boot of the new ABI (early syshook) ---------
+prefetched()
+{
+	# booted into FreeBSD:15 with the FreeBSD:14 packages and a prefetch for FreeBSD:15
+	setup "$1"
+	echo FreeBSD:14:amd64 > "${ST}/pkgabi.if-pppoe-kmod"
+	echo FreeBSD:14:amd64 > "${ST}/pkgabi.os-if-pppoe"
+	mkdir -p "${IF_PPPOE_PREFETCH_DIR}/${PF15}"
+	: > "${IF_PPPOE_PREFETCH_DIR}/${PF15}/meta.conf"
+	echo "26.7 FreeBSD:15:amd64" > "${IF_PPPOE_PREFETCH_DIR}/${PF15}/.ready"
+	: > "${IF_PPPOE_PKG_DBDIR}/repos/IfPppoe/db"
+}
+
+prefetched off-ok
+eq "offline: exit 0" "$(early)" 0
+contains "offline: catalogue from the prefetch" "$(pkgcalls)" "pkg -R ${IF_PPPOE_PREFETCH_DIR}/.repos update -f -r IfPppoe"
+contains "offline: reinstalls both from it" "$(pkgcalls)" "pkg -R ${IF_PPPOE_PREFETCH_DIR}/.repos install -f -y -U -r IfPppoe if-pppoe-kmod os-if-pppoe"
+contains "offline: repository is the prefetch" "$(cat "${ST}/repoconfs")" "url: \"file://${IF_PPPOE_PREFETCH_DIR}/${PF15}\","
+check "offline: prefetch removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+eq "offline: kernel PPPoE armed this boot" "$(bootres)" "enabled:ok"
+eq "offline: recorded" "$(heal_result)" "healed"
+check "offline: IfPppoe repo db (file:// packagesite) removed" test ! -e "${IF_PPPOE_PKG_DBDIR}/repos/IfPppoe"
+contains "offline: bounded by timeout" "$(cat "${ST}/timeouts")" "timeout --foreground -k 10 120 /bin/sh ${IF_PPPOE_SCRIPTS}/abi-heal.sh offline"
+check "offline: no reboot notice" test ! -f "${IF_PPPOE_RUN_DIR}/notice.d/abi-reboot"
+: > "${ST}/pkgcalls"
+sh "${START}" >/dev/null 2>&1
+check "offline: start syshook has nothing left to heal" test "$(pkgcalls | grep -c -e daemon -e 'pkg update')" -eq 0
+
+prefetched off-fail
+echo 1 > "${ST}/pkg.install.rc"
+echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"   # not in the old build_ids
+eq "offline install fails: exit 0" "$(early)" 0
+eq "offline install fails: falls through to kmod-abi-mismatch" "$(bootres)" "failed:kmod-abi-mismatch"
+check "offline install fails: prefetch removed anyway" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+check "offline install fails: IfPppoe repo db removed" test ! -e "${IF_PPPOE_PKG_DBDIR}/repos/IfPppoe"
+rm -f "${ST}/pkg.install.rc"
+: > "${ST}/pkgcalls"
+sh "${START}" >/dev/null 2>&1
+contains "offline install fails: start syshook heals over the network" "$(pkgcalls)" "${INSTALL_CALL}"
+check "offline install fails: network heal uses the installed repositories" test "$(pkgcalls | grep -c -- ' -R ')" -eq 0
+
+for m in kernel base pkgs; do
+	prefetched "off-pending-${m}"
+	mkdir -p "${IF_PPPOE_UPGRADE_DIR}"
+	echo 26.7 > "${IF_PPPOE_UPGRADE_DIR}/.${m}.pending"
+	early >/dev/null
+	eq "offline, .${m}.pending: no install" "$(pkgcalls | grep -c 'pkg install')" 0
+	check "offline, .${m}.pending: prefetch kept" test -f "${IF_PPPOE_PREFETCH_DIR}/${PF15}/.ready"
+done
+
+prefetched off-noready
+rm -f "${IF_PPPOE_PREFETCH_DIR}/${PF15}/.ready"
+echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"
+early >/dev/null
+eq "offline, no completion marker: no pkg update/install" "$(pkgcalls | grep -c -e 'pkg.* update' -e 'pkg.* install')" 0
+check "offline, no completion marker: removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+eq "offline, no completion marker: falls through to kmod-abi-mismatch" "$(bootres)" "failed:kmod-abi-mismatch"
+
+prefetched off-release
+echo 26.1 > "${IF_PPPOE_VERSION_DIR}/pkgs"
+echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"
+early >/dev/null
+eq "offline, prefetch for another release: no pkg update/install" "$(pkgcalls | grep -c -e 'pkg.* update' -e 'pkg.* install')" 0
+contains "offline, prefetch for another release: logged" "$(cat "${ST}/log")" "the prefetch is for 26.7 FreeBSD:15:amd64, this system is 26.1 FreeBSD:15:amd64; discarded"
+check "offline, prefetch for another release: removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+eq "offline, prefetch for another release: falls through to kmod-abi-mismatch" "$(bootres)" "failed:kmod-abi-mismatch"
+
+prefetched off-downgrade
+echo 0.5.1 > "${ST}/pkgver.os-if-pppoe"
+echo 0.5 > "${ST}/repover.os-if-pppoe"
+echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"
+early >/dev/null
+eq "offline, prefetch older than installed: no install" "$(pkgcalls | grep -c 'pkg install')" 0
+contains "offline, prefetch older than installed: logged" "$(cat "${ST}/log")" "the prefetch has os-if-pppoe-0.5, older than installed; discarded"
+check "offline, prefetch older than installed: removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+check "offline, prefetch older than installed: IfPppoe repo db removed" test ! -e "${IF_PPPOE_PKG_DBDIR}/repos/IfPppoe"
+eq "offline, prefetch older than installed: falls through to kmod-abi-mismatch" "$(bootres)" "failed:kmod-abi-mismatch"
+
+# a daemon the install (re)starts keeps its stdout/stderr: offline must not wait for it
+prefetched off-daemon
+touch "${ST}/pkg.install.daemon"
+t0=$(date +%s)
+eq "offline, install leaves a daemon holding its output: exit 0" "$(early)" 0
+check "offline, install leaves a daemon holding its output: not waited for" test $(($(date +%s) - t0)) -lt 15
+eq "offline, install leaves a daemon holding its output: armed" "$(bootres)" "enabled:ok"
+
+# a hung offline install is cut short (timeout scaled down): boot goes on to the kmod gate
+if command -v timeout >/dev/null 2>&1; then
+	prefetched off-hung
+	stub timeout 'while :; do case $1 in --foreground) shift ;; -k) shift 2 ;; *) break ;; esac; done; shift; exec timeout -k 1 2 "$@"'
+	echo 8b6a8cad00000000000000000000000000000000 > "${ST}/sysctl.kern.build_id"
+	mv "${S}/bin/pkg" "${S}/bin/pkg.real"
+	# shellcheck disable=SC2016
+	stub pkg 'case " $* " in *" install "*) exec /bin/sleep 30 ;; esac; exec "$(dirname "$0")/pkg.real" "$@"'
+	t0=$(date +%s)
+	eq "offline, hung install: early syshook exits 0" "$(early)" 0
+	check "offline, hung install: bounded" test $(($(date +%s) - t0)) -lt 15
+	contains "offline, hung install: logged" "$(cat "${ST}/log")" "offline install did not finish within 120s"
+	check "offline, hung install: prefetch removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+	check "offline, hung install: IfPppoe repo db removed" test ! -e "${IF_PPPOE_PKG_DBDIR}/repos/IfPppoe"
+	eq "offline, hung install: falls through to kmod-abi-mismatch" "$(bootres)" "failed:kmod-abi-mismatch"
+fi
+
+prefetched off-otherabi
+mv "${IF_PPPOE_PREFETCH_DIR}/${PF15}" "${IF_PPPOE_PREFETCH_DIR}/FreeBSD-16-amd64"
+early >/dev/null
+eq "offline, prefetch for another ABI: no install" "$(pkgcalls | grep -c 'pkg install')" 0
+check "offline, prefetch for another ABI: removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
+
+prefetched off-match
+echo FreeBSD:15:amd64 > "${ST}/pkgabi.if-pppoe-kmod"
+echo FreeBSD:15:amd64 > "${ST}/pkgabi.os-if-pppoe"
+early >/dev/null
+eq "offline, packages already match: no install" "$(pkgcalls | grep -c 'pkg install')" 0
+check "offline, packages already match: stale prefetch removed" test ! -e "${IF_PPPOE_PREFETCH_DIR}"
 
 old_abi abi-nopkg
 export IF_PPPOE_PKG=""

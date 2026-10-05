@@ -147,7 +147,8 @@ if [ -d "$PLUGIN_SRC" ]; then
 	done > "$TMPDIR/installed-paths"
 	# Every path +PRE_DEINSTALL/uninstall.sh hard-code must actually be one
 	# of the paths the plist simulation says this package installs.
-	for expect in /usr/local/opnsense/scripts/if_pppoe/uninstall.sh; do
+	# ... and so must the upgrade syshook core's firmware upgrade.sh runs (rc.syshook upgrade)
+	for expect in /usr/local/opnsense/scripts/if_pppoe/uninstall.sh /usr/local/etc/rc.syshook.d/upgrade/50-if-pppoe; do
 		if grep -qxF "$expect" "$TMPDIR/installed-paths"; then
 			pass "install-path simulation: $expect is produced by src/ -> \${LOCALBASE} mapping"
 		else

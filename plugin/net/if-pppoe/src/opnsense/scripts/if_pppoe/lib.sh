@@ -24,12 +24,21 @@
 : "${IF_PPPOE_PKG=/usr/local/sbin/pkg}"
 : "${IF_PPPOE_FW_LOCK:=/tmp/pkg_upgrade.progress}"
 : "${IF_PPPOE_FLOCK:=/usr/local/bin/flock}"
+# opnsense-update's WORKPREFIX (staged sets, .{kernel,base,pkgs}.pending markers)
+: "${IF_PPPOE_UPGRADE_DIR:=/var/cache/opnsense-update}"
+# packages for a major upgrade's new ABI, fetched before its reboot (abi-heal.sh prefetch)
+: "${IF_PPPOE_PREFETCH_DIR:=/var/cache/if_pppoe/prefetch}"
+# opnsense-update's VERSIONDIR (installed kernel/base/pkgs release)
+: "${IF_PPPOE_VERSION_DIR:=/usr/local/opnsense/version}"
+# pkg's database directory (pkg.conf(5) PKG_DBDIR), holding repos/<name>/
+: "${IF_PPPOE_PKG_DBDIR:=${PKG_DBDIR:-/var/db/pkg}}"
 
 IF_PPPOE_FEATURES="linkevents ipv6 mssfix pfil_pass_foreign single_bytecount"
 IF_PPPOE_STRIKE_MAX=3
 IF_PPPOE_STRIKE_WINDOW=86400
-# the packages this plugin installs from its own IfPppoe repository
+# the packages this plugin installs from its own pkg repository, and that repository
 IF_PPPOE_PACKAGES="if-pppoe-kmod os-if-pppoe"
+IF_PPPOE_REPO=IfPppoe
 
 ifp_now()
 {

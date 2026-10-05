@@ -84,6 +84,37 @@ ours included.)
 
 **What the plugin does about it.**
 
+- Before the upgrade reboots, the plugin's `upgrade` syshook
+  (`rc.syshook.d/upgrade/50-if-pppoe`, `abi-heal.sh prefetch`) reads the new
+  ABI from the staged kernel set's `.abi_hint` (or the base set's)
+  (`/var/cache/opnsense-update/.sets.pending/kernel-*.txz`, written by
+  opnsense/tools `build/common.sh` `generate_set()`), and the release from
+  `.kernel.pending` (or `.base.pending`). If the ABI differs from
+  `pkg config abi`, it fetches the installed plugin packages for that ABI,
+  with the signed catalogue (`meta.conf`, `data.pkg`, `packagesite.pkg`),
+  into `/var/cache/if_pppoe/prefetch/FreeBSD-15-amd64/`. It uses its own pkg
+  database, cache and repo config
+  (`pkg -o ABI=FreeBSD:15:amd64 -o OSVERSION=1500000 -o IGNORE_OSVERSION=yes
+  -o PKG_DBDIR=... -o PKG_CACHEDIR=... -R ...`), with the same fingerprints
+  as the installed `IfPppoe.conf`. It then reads the result back as a
+  `file://` repo and writes `.ready` (release and ABI) last. It never fails
+  the upgrade and gives up after 5 minutes: on any error it logs, removes
+  the partial prefetch and the steps below run as before. The catalogue
+  download uses fetch(1), not pkg, so a proxy set only in `pkg.conf`
+  `PKG_ENV` is not used for it; behind such a proxy the prefetch fails and
+  the network reinstall below applies.
+- On the first boot on the new ABI (after core's `-K`/`-B`/`-P` reboots), the
+  early syshook installs from that prefetch with no network, before the kmod
+  check (`pkg -R <file:// IfPppoe.conf> update -f -r IfPppoe`, then
+  `pkg -R ... install -f -y -U -r IfPppoe if-pppoe-kmod os-if-pppoe`), and
+  removes the prefetch, and the `IfPppoe` repo database that now points at
+  it, whatever the outcome. It only uses a prefetch with a `.ready` that
+  matches the installed release (`/usr/local/opnsense/version/pkgs`) and
+  ABI, and none that would downgrade a package (`pkg version -t`); it gives
+  up after 2 minutes. If that works, kernel PPPoE is armed on that same
+  boot, so the upgrade costs no extra reboot. If it fails, or nothing was
+  prefetched (no build for the new ABI published yet, repo unreachable
+  during the upgrade), the steps below apply.
 - The early boot syshook reports `kmod-abi-mismatch` instead of
   `kernel-not-supported` when `pkg query %q if-pppoe-kmod` (or `os-if-pppoe`)
   differs from `pkg config abi`, and leaves the WANs on mpd5. Services ->
@@ -106,11 +137,11 @@ ours included.)
   unreachable, it changes nothing, keeps mpd5 and leaves a notice. The
   result of each attempt is in `/conf/if_pppoe/abi-heal.json`.
 
-The reinstall can't happen before the first 26.7 boot. The only hook that
-runs after the ABI switch is the update syshook inside `-P`, and there the
-network is not up yet (rc.bootup has not run; the WAN may be this very
-PPPoE link) and pkg is still mid-transaction. So the upgrade costs one extra
-reboot on mpd5.
+Without the prefetch, the reinstall can't happen before the first 26.7
+boot. The only hook that runs after the ABI switch is the update syshook
+inside `-P`, and there the network is not up yet (rc.bootup has not run; the
+WAN may be this very PPPoE link) and pkg is still mid-transaction. So that
+fallback costs one extra reboot on mpd5.
 
 **By hand**, if the automatic reinstall did not happen (for example, no
 route to the repo):
