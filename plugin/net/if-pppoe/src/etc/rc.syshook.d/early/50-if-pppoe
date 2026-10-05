@@ -12,6 +12,17 @@ chmod 0700 "${IF_PPPOE_CONF_DIR}"
 rm -f "${IF_PPPOE_RUN_DIR}"/notice.d/boot-*
 ifp_notice_clear abi-reboot
 
+# first boot after a major upgrade: install the packages the upgrade syshook fetched for this
+# ABI, so the gate below finds a matching kmod (on failure abi-heal.sh retries once networked).
+# Bounded so a stuck pkg cannot hold the boot; when cut short, drop what it left behind.
+# --foreground (FreeBSD 14 has no -f): timeout(1) otherwise reaps every descendant, so it
+# would wait out the limit on, then kill, the configd/syslog-ng/devd that +POST_INSTALL restarts
+if [ -d "${IF_PPPOE_PREFETCH_DIR}" ] &&
+    ! ${IF_PPPOE_TIMEOUT} --foreground -k 10 120 /bin/sh "${IF_PPPOE_SCRIPTS}/abi-heal.sh" offline; then
+	ifp_log "abi-heal: offline install did not finish within 120s; reinstalling over the network once it is up" warning
+	rm -rf "${IF_PPPOE_PREFETCH_DIR}" "${IF_PPPOE_PKG_DBDIR}/repos/${IF_PPPOE_REPO}"
+fi
+
 stay_stock()
 {
 	# $1 = boot result word, $2 = reason word, $3 = optional boot.json member
@@ -75,7 +86,7 @@ echo "${now}" > "${IF_PPPOE_CONF_DIR}/boot.pending"
 if ! ko=$(ifp_kmod_path); then
 	# after an OPNsense major upgrade the old-ABI if-pppoe-kmod has no .ko for the new
 	# kernel: say so instead of "kernel-not-supported" (abi-heal.sh reinstalls it once
-	# the network is up; this boot has none to spare and pkg may not be usable yet)
+	# the network is up, unless the prefetch above already did)
 	# shellcheck disable=SC2086
 	abi=$(ifp_abi_mismatch) && set -- ${abi} && \
 	    fail kmod-abi-mismatch "kernel PPPoE not armed this boot: installed $1 is built for $2 but this system is $3; using mpd5 until it is reinstalled (pkg install -f -r IfPppoe if-pppoe-kmod os-if-pppoe), then reboot"

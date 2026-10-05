@@ -1,0 +1,8 @@
+#!/bin/sh
+# os-if-pppoe: runs from core's firmware upgrade.sh (rc.syshook upgrade) once opnsense-update -u
+# has staged a major release, before its reboot: fetch this plugin's packages for the new ABI
+# while the network is up, so the first boot on it installs them offline (early syshook).
+# A failing upgrade hook aborts the upgrade: always exit 0, whatever happens, and never hold the
+# GUI upgrade for more than 5 minutes (offline() ignores a prefetch cut short).
+${IF_PPPOE_TIMEOUT:-/bin/timeout} --foreground -k 10 300 /bin/sh "${IF_PPPOE_SCRIPTS:-/usr/local/opnsense/scripts/if_pppoe}/abi-heal.sh" prefetch
+exit 0

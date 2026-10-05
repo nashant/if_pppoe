@@ -490,6 +490,174 @@ says the catalogue files (`meta.conf`, `packagesite.pkg`, ...) live at the
 `REPOSITORY_ROOT` the `url` names, with no `${ABI}` subpath appended unless the url
 itself contains a literal `${ABI}` token — which `repo_conf()` doesn't add.
 
+### plugin-upgrade.sh: the plugin across a real major upgrade
+
+`plugin-upgrade.sh` runs a real OPNsense 26.1 -> 26.7 upgrade (FreeBSD:14 -> FreeBSD:15) on
+`dut` with the plugin armed. It checks the upgrade prefetch: the `upgrade` syshook fetches
+the FreeBSD:15 packages, and the first 26.7 boot installs them offline in the early syshook,
+so kernel PPPoE is armed on that boot (`docs/plugin/INSTALL.md` "OPNsense major upgrades").
+It shares `dut-lib.sh` with `plugin-roundtrip.sh`: the tmpfs overlay, the per-run key, API
+key and PPPoE account, and the repo server on 192.168.90.1.
+
+**Path.** System -> Firmware -> Upgrade and `configctl firmware upgrade` run core's
+`upgrade.sh`, which calls `opnsense-update -u` without naming a release. opnsense-update then
+reads the target from `UPGRADE_RELEASE` in `/usr/local/etc/opnsense-update.conf`
+(opnsense/update `src/update/opnsense-update.sh.in`: `-u` implies `-R`). core ships that hint
+only in the last releases of a series: stable/26.1 `src/etc/opnsense-update.conf.in` got
+`UPGRADE_RELEASE="26.7"` and the 26.7 fingerprint on 2026-07-15 (8cc69b21e0f4), after the
+26.1.11 tag. So a box must take the minor update to the latest 26.1 first. The driver runs it
+the way the GUI does (`configctl firmware flush` + `configctl firmware update`), repeating it
+until `opnsense-update -vR` prints 26.7. Then it runs `configctl firmware upgrade`. The 26.7
+sets come from the box's own ABI tree: `FreeBSD:14:amd64/26.1/sets/` lists `kernel-26.7`,
+`base-26.7` and `packages-26.7`. Plain amd64 nano gets no device suffix: opnsense-update adds
+one only when `kern.ident` contains a `-`, and here the kernel is `SMP`.
+
+**Start image.** By default (`UPGRADE_FROM=26.1`) the driver boots the official 26.1.6 nano
+image. That is the newest 26.1 nano in `pkg.opnsense.org/releases/26.1/`, so its minor update
+is the shortest. `UPGRADE_FROM=25.7` boots `dut.qcow2` (25.7 nano) instead and adds two legs:
+
+1. 25.7 -> latest 25.7.x -> 26.1, with the plugin installed but not enabled. This leg checks
+   that the prefetch is a no-op on a same-ABI upgrade: the hook runs, nothing is prefetched,
+   and the packages stay FreeBSD:14.
+2. 26.1 -> latest 26.1.x.
+
+Starting from 26.1 is still faithful for the feature under test, because only the
+FreeBSD:14 -> 15 step crosses ABIs, and it saves about 40 min. Prepare the image once:
+
+```
+OPNSENSE_VERSION=26.1.6 OPNSENSE_IMG_BASE_URL=https://pkg.opnsense.org/releases/26.1 ./fetch-image.sh dut
+```
+
+That produces `images/OPNsense-26.1.6-nano-amd64.img.qcow2`. An existing `dut.qcow2` is left
+as it is. The driver overlays the new image directly, at `VM_OVERLAY_SIZE`.
+
+The nano image's own config would put `/var` in RAM (opnsense/tools `config/*/extras.conf`
+`nano_hook` sets `<use_mfs_var/>`). The seeded `config.xml` replaces that config and does not
+set it, so the staged sets and `/var/cache/if_pppoe` survive the upgrade's reboots.
+
+**Internet access (no change on `$VMHOST`).** The upgrade needs pkg.opnsense.org and
+nashant.github.io. dut gets them over its own PPPoE WAN: the lab isp NATs dut's traffic out of
+its qemu user-mode NIC, which already has internet (provision-isp.sh runs `apt-get` through
+it). For the run:
+
+- dut's PPPoE account is pinned to `UPGRADE_DUT_WAN_IP` (default `10.99.0.250`, outside accel's
+  `10.99.0.100-199` pool). The pin is the 4th field of the accel secrets line, which accel
+  1.14.0 makes the session's `peer_addr` (`accel-pppd/extra/chap-secrets.c`). The driver
+  checks that pppoe0 really got that address.
+- On `isp1` the driver adds one nftables table, `ip if_pppoe_upgrade`, with three parts:
+  - masquerade for that source address out of the isp's default-route NIC;
+  - DNAT of that source's DNS to 10.99.0.1 (accel's `dns1`) to the isp's own resolver (the
+    one in `/etc/resolv.conf`, else slirp's 10.0.2.3);
+  - a forward filter that lets only that address through. If `ip_forward` was 0, nothing
+    else is forwarded. If it was 1, nothing else may use the uplink.
+- It sets `net.ipv4.ip_forward=1` and saves the old value in `/run/if_pppoe-upgrade.forward`.
+- If `nft` is missing, it installs the `nftables` package and leaves it installed.
+
+Teardown runs on every exit path. It deletes the table, restores `ip_forward` from that file
+and removes the account.
+
+On `$VMHOST` the driver changes nothing beyond what the roundtrip already does: the tmpfs
+overlay and repo dir, and the `http.server` bound to 192.168.90.1. That host is a
+Cilium/Docker node whose iptables-nft tables say "do not touch", so a host-side NAT was ruled
+out. This route also carries the upgrade's downloads over the plugin's own PPPoE WAN, which is
+the kernel driver once it is armed, as on a real box.
+
+After a SIGKILLed run, clean up on isp1 by hand:
+
+```
+sudo nft delete table ip if_pppoe_upgrade
+sudo sysctl -w net.ipv4.ip_forward=$(cat /run/if_pppoe-upgrade.forward)
+sudo rm /run/if_pppoe-upgrade.forward
+```
+
+Then delete the `dutrun-` line from `/run/accel-ppp/chap-secrets`.
+
+**Packages under test.** The driver takes a FreeBSD:14 build of the branch that has a `.ko`
+for the latest 26.1 kernel. It checks that coverage before enabling the plugin, and stops with
+a message if the kernel is not covered. Pass the build in two variables:
+
+- `IFPPPOE_REPO_TARBALL`: the flat repo, served the same way as the roundtrip's;
+- `IFPPPOE_REPO_SIGNING_PUBKEY_PATH`: the `.pub` that signed it.
+
+Build it on the `build` VM in kernels-json mode, from the release's `kernels.json`:
+
+```
+gh release download v0.5.1 -R nashant/if_pppoe -p kernels.json -O /tmp/kernels.json
+jq '[.[] | select(.abi == "FreeBSD:14:amd64" and .series == "26.1")]' /tmp/kernels.json > /tmp/k14.json
+#   (UPGRADE_FROM=25.7: drop the series filter so the 25.7 kernels are covered too)
+bash -c 'source lab/vm/common.sh && vm_ssh build "cat > /home/freebsd/k14-upgrade.json"' < /tmp/k14.json
+PLUGIN_ABIS="25.7 26.1" lab/vm/pkg-build.sh --local-out ./pkgout-upgrade14 <feat/upgrade-prefetch worktree> -- \
+    --kernels-json /home/freebsd/k14-upgrade.json --abi FreeBSD:14:amd64 --version 0.5.1 \
+    --key /home/freebsd/.if_pppoe-lab-upgrade.key --gen-key
+bash -c 'source lab/vm/common.sh && vm_ssh build "cat /home/freebsd/.if_pppoe-lab-upgrade.pub"' > ./pkgout-upgrade14/lab-upgrade.pub
+```
+
+`PLUGIN_ABIS="25.7 26.1"` matches CI's FreeBSD:14 package (`.github/scripts/freebsd-build.sh`
+`phase_package`).
+
+**Version.** Build the branch as `--version 0.5.1`. That is the version of the published
+FreeBSD:15 packages the prefetch fetches, so the downgrade guard never sees a newer installed
+version (`pkg version -t` compares equal versions as `=`). Before the upgrade the driver stops
+if the installed `os-if-pppoe` compares `>` to `PUBLISHED_VERSION` (default 0.5.1).
+
+**Published repo.** Also before the upgrade, the driver points `IfPppoe` at the published
+repo. It fetches two files from the Pages site: `client-conf/repos/IfPppoe.conf` (url
+`https://nashant.github.io/if_pppoe/${ABI}`, as `gen-repo-conf.sh` writes it) and the release
+fingerprint, which replaces the lab one. The prefetch therefore reads a real, signed
+FreeBSD:15 catalogue. v0.5.1 covers the 26.7 kernel the upgrade installs.
+
+**Run.** isp1 must be up and dut down. Expect about 60-80 min from 26.1 and about 2 h from
+25.7 (estimates, not yet timed).
+
+```
+IFPPPOE_REPO_TARBALL=./pkgout-upgrade14/repo.tar.gz \
+IFPPPOE_REPO_SIGNING_PUBKEY_PATH=./pkgout-upgrade14/lab-upgrade.pub \
+    lab/vm/plugin-upgrade.sh
+```
+
+Optional variables:
+
+- `UPGRADE_FROM`
+- `UPGRADE_BASE_IMAGE`, a file under `images/`
+- `UPGRADE_OUT_DIR`, default `./plugin-upgrade-out/<UTC stamp>`
+- `UPGRADE_DUT_WAN_IP`, `UPGRADE_UPSTREAM_DNS`
+- `PUBLISHED_REPO_BASE`, `PUBLISHED_VERSION`, `PREFETCH_READY_LINE`
+- timeouts: `UPDATE_TIMEOUT`, `UPGRADE_STAGE_TIMEOUT`, `UPGRADE_REBOOT_TIMEOUT`,
+  `BOOT_TIMEOUT`
+
+**Assertions.** The driver checks these after the final 26.7 boot. It runs every check and
+fails the run at the end if any of them failed:
+
+- the upgrade's firmware log has
+  `abi-heal: prefetch: ready in /var/cache/if_pppoe/prefetch/FreeBSD-15-amd64`;
+- `pkg config abi` and the `%q` of both packages are `FreeBSD:15:amd64`;
+- `/var/run/if_pppoe/boot.json` is `enabled`/`ok`, stamped on this boot;
+- `/conf/if_pppoe/abi-heal.json` is `offline`/`healed`, from FreeBSD:14 to FreeBSD:15;
+- the prefetch dir is gone;
+- `pkg update -f -r IfPppoe` succeeds and offers `os-if-pppoe` for FreeBSD:15;
+- `if_pppoe.ko` is loaded;
+- the WAN is up on the pinned address, and the API reports `wan` on the `kernel` backend;
+- the console capture shows exactly 3 boots after the upgrade's reboot (`-B`, `-P`, final),
+  and `kern.boottime` stays the same afterwards (no extra reboot);
+- the final boot's console section has no `>>> Error in` syshook line and no
+  syslog-ng/devd/configd errors.
+
+The driver also reports two things without asserting them:
+
+- the early hook's duration: the console timestamps from `>>> Invoking early script
+  'if-pppoe'` to the next line not starting with `if_pppoe:`, and the `abi-heal.json` and
+  `boot.json` `at` stamps against `kern.boottime`;
+- syslog-ng/devd/configd error lines in `/var/log/system/latest.log`.
+
+`UPGRADE_OUT_DIR` holds no secrets. It keeps:
+
+- the firmware logs: `*.progress.log`, plus the kept `.update.log` and `.upgrade.log`;
+- the timestamped console: `console.log` and `final-boot-console.log`;
+- the JSON state, `dmesg -a` and the system log.
+
+The console capture is a second reader of the qemu chardev socket. It connects only after
+provisioning's console step has finished.
+
 Inside the `client` VM's guest disk:
 - `/boot/kernel.SMP/` — the SMP kernel + flat modules, installed as an *alternate* boot
   kernel (`kernel="kernel.SMP"` in `/boot/loader.conf`). The stock kernel at `/boot/kernel/`

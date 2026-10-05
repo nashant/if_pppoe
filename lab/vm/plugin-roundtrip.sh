@@ -15,27 +15,12 @@ for t in openssl ssh-keygen python3 shred; do
     command -v "$t" >/dev/null || { echo "plugin-roundtrip.sh: need $t" >&2; exit 2; }
 done
 
-vm_config dut
-# vm_ssh re-runs vm_config for its target, so keep dut's values apart.
-DUT_VM_NAME="$VM_NAME"
-DUT_PIDFILE="\$HOME/$LAB_DIR/$VM_RUN_DIR/$VM_NAME.pid"
-DUT_BASE="\$HOME/$LAB_DIR/images/$VM_BASE_IMAGE"
-DUT_LAN_IP="192.168.90.2"   # dut-config.xml.tmpl's <lan><ipaddr> -- keep in sync
-DUT_REPO_HOST_IP="192.168.90.1"   # run.sh's VM_BRIDGE2_HOST_IP for dut -- keep in sync
-IFPPPOE_REPO_PORT="${IFPPPOE_REPO_PORT:-8090}"
-# $VMHOST tmpfs dirs holding a run's overlay / kernel set / served repo: <prefix>.XXXXXX
-R_OVL_PREFIX="/dev/shm/${LAB_DIR//\//_}-dut-run"
-R_KSET_PREFIX="/dev/shm/${LAB_DIR//\//_}-dut-kset"
-R_REPO_PREFIX="/dev/shm/${LAB_DIR//\//_}-dut-repo"
-ISP_VM=isp1   # slot 1's isp, explicitly (see header)
-# The lab isp has no upstream (no DNS/internet) and never opens IPv6CP
-# (tests/functional/test_ipv6cp.py): step 4 pings its PPPoE peer instead,
-# accel-ppp.conf's [ip-pool] gw-ip-address, and skips the v6 ping.
-LAB_ISP_PPP_GW="10.99.0.1"
+# shellcheck source=dut-lib.sh
+source ./dut-lib.sh   # vm_config dut, DUT_*/R_*_PREFIX/ISP_VM, dut_ssh, dut_account_*, dut_repo_*
 
 # Refuse up front if dut is up: teardown's `run.sh dut down` must only stop
 # a dut this run booted, and a running dut may still hold an old overlay.
-if host_ssh "test -f \"$DUT_PIDFILE\" && sudo kill -0 \"\$(sudo cat \"$DUT_PIDFILE\")\"" 2>/dev/null; then
+if dut_is_running; then
     echo "plugin-roundtrip.sh: dut is already running -- run './run.sh dut down' first." >&2
     exit 1
 fi
@@ -52,50 +37,9 @@ REPO_SERVER_STARTED=0
 PYTEST_RAN=0
 API_TUNNEL_PID=""   # local ssh -L to dut's web GUI/API (open_api_tunnel)
 
-# Exact-user accel-ppp add/del. `dutrun-` is not lab-creds.sh's `labrun-`
-# prefix, so neither side's rewrite can remove the other's account.
-_DUT_ACCEL_ADD='set -eu
-umask 077
-d='"$LAB_CREDS_ACCEL_DIR"'; f=$d/chap-secrets; u=$2
-IFS= read -r line
-if ! grep -qx "chap-secrets=$f" "$1"; then
-    echo "$1: [chap-secrets] chap-secrets= is not $f (re-run lab/vm/provision-isp.sh)" >&2
-    exit 4
-fi
-mkdir -p "$d"; chmod 700 "$d"
-exec 9>"$d/.lock"; flock 9
-{ if [ -f "$f" ]; then grep -v "^$u " "$f" || true; fi
-  printf "%s\n" "$line"; } > "$f.tmp"
-chmod 600 "$f.tmp"; mv "$f.tmp" "$f"'
-
-# $1: user.
-_DUT_ACCEL_DEL='set -eu
-d='"$LAB_CREDS_ACCEL_DIR"'; f=$d/chap-secrets; u=$1
-[ -f "$f" ] || exit 0
-exec 9>"$d/.lock"; flock 9
-grep -v "^$u " "$f" > "$f.tmp" || true
-if [ -s "$f.tmp" ]; then chmod 600 "$f.tmp"; mv "$f.tmp" "$f"; else rm -f "$f.tmp" "$f"; fi'
-
-dut_account_add() {
-    printf '%s * %s *\n' "$DUT_PPPOE_USERNAME" "$DUT_PPPOE_PASSWORD" |
-        vm_ssh "$ISP_VM" "sudo sh -c $(_lab_creds_sq "$_DUT_ACCEL_ADD") sh /etc/accel-ppp.conf $DUT_PPPOE_USERNAME"
-}
-
-# shellcheck disable=SC2329  # called from teardown (a trap)
-dut_account_del() {
-    vm_ssh "$ISP_VM" "sudo sh -c $(_lab_creds_sq "$_DUT_ACCEL_DEL") sh $DUT_PPPOE_USERNAME" </dev/null
-}
-
 # Fetch/copy DUT_KERNEL_SET to $VMHOST tmpfs, install it on dut like
 # opnsense-update -k's install_kernel(), reboot, assert kern.build_id.
 # See README.md "dut" for the sources this mirrors.
-# dut_ssh <cmd>: root@dut over br-dut-lan via $VMHOST, the run's ephemeral key.
-dut_ssh() {
-    ssh -J "$VMHOST" -i "$RUNDIR/id_ed25519" -o IdentitiesOnly=yes \
-        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-        -o ConnectTimeout=5 -o BatchMode=yes "root@$DUT_LAN_IP" "$@"
-}
-
 install_dut_kernel_set() {
     R_KSET_DIR="$(host_ssh bash -s <<EOF
 set -euo pipefail
@@ -217,45 +161,10 @@ EOF
     echo "kern.build_id confirmed: $GOT_BUILD_ID"
 }
 
-# Untar IFPPPOE_REPO_TARBALL (flat: ./meta.conf, ./packagesite.pkg, ./*.pkg)
-# on $VMHOST tmpfs and serve it to dut over br-dut-lan for the run's
-# lifetime. Flat matches repo_conf()'s url verbatim -- see README.md "dut".
+# Serve IFPPPOE_REPO_TARBALL to dut (dut_repo_serve) and disable the
+# OPNsense mirror the offline lab WAN can't reach -- see README.md "dut".
 start_ifpppoe_repo() {
-    [ -f "$IFPPPOE_REPO_TARBALL" ] || { echo "plugin-roundtrip.sh: IFPPPOE_REPO_TARBALL '$IFPPPOE_REPO_TARBALL' not found" >&2; exit 1; }
-
-    R_REPO_DIR="$(host_ssh bash -s <<EOF
-set -euo pipefail
-[ "\$(stat -f -c %T /dev/shm)" = tmpfs ] || { echo "/dev/shm on $VMHOST is not tmpfs" >&2; exit 1; }
-rm -rf "$R_REPO_PREFIX".*
-d="\$(mktemp -d "$R_REPO_PREFIX.XXXXXX")"
-chmod 700 "\$d"
-mkdir -m 755 "\$d/www"
-echo "\$d"
-EOF
-)"
-    case "$R_REPO_DIR" in
-        "$R_REPO_PREFIX".*) ;;
-        *) echo "plugin-roundtrip.sh: unexpected repo dir '$R_REPO_DIR'" >&2; R_REPO_DIR=""; exit 1 ;;
-    esac
-
-    echo "== copying IFPPPOE_REPO_TARBALL to $VMHOST =="
-    scp -o ConnectTimeout=8 "$IFPPPOE_REPO_TARBALL" "$VMHOST:$R_REPO_DIR/repo.tar.gz"
-    host_ssh "tar -C '$R_REPO_DIR/www' -xzf '$R_REPO_DIR/repo.tar.gz'"
-    host_ssh "test -f '$R_REPO_DIR/www/meta.conf' && test -f '$R_REPO_DIR/www/packagesite.pkg'" \
-        || { echo "plugin-roundtrip.sh: IFPPPOE_REPO_TARBALL is missing meta.conf/packagesite.pkg at its root" >&2; exit 1; }
-
-    echo "== serving the repo on $DUT_REPO_HOST_IP:$IFPPPOE_REPO_PORT (br-dut-lan) =="
-    # One simple backgrounded command, not `cd x && setsid ...`: with &&,
-    # $! is bash's wrapper subshell, not the server (tested both forms) --
-    # --directory avoids needing the cd; fds redirected so ssh can return.
-    host_ssh "setsid python3 -m http.server --directory '$R_REPO_DIR/www' --bind $DUT_REPO_HOST_IP $IFPPPOE_REPO_PORT </dev/null >'$R_REPO_DIR/http.log' 2>&1 & echo \$! > '$R_REPO_DIR/http.pid'"
-    REPO_SERVER_STARTED=1
-    sleep 1
-    host_ssh "kill -0 \"\$(cat '$R_REPO_DIR/http.pid')\"" \
-        || { echo "plugin-roundtrip.sh: repo http.server did not stay up; log:" >&2; host_ssh "cat '$R_REPO_DIR/http.log'" >&2; exit 1; }
-
-    export IFPPPOE_REPO_URL="http://$DUT_REPO_HOST_IP:$IFPPPOE_REPO_PORT"
-    echo "IFPPPOE_REPO_URL=$IFPPPOE_REPO_URL"
+    dut_repo_serve "$IFPPPOE_REPO_TARBALL"
 
     # dut's WAN is the offline lab isp (no DNS, no internet), so the stock
     # OPNsense mirror can't update, and pkg install aborts when any enabled
@@ -312,14 +221,7 @@ EOF
     find "$RUNDIR" -type f -exec shred -u {} + 2>/dev/null
     rm -rf "$RUNDIR"
     unset DUT_API_KEY DUT_API_SECRET DUT_PPPOE_PASSWORD
-    if [ "$REPO_SERVER_STARTED" = 1 ]; then
-        host_ssh "test -f '$R_REPO_DIR/http.pid' && kill \"\$(cat '$R_REPO_DIR/http.pid')\" 2>/dev/null" \
-            || echo "plugin-roundtrip.sh: WARNING: could not stop the IFPPPOE_REPO_TARBALL http.server on $VMHOST" >&2
-    fi
-    if [ -n "$R_REPO_DIR" ]; then
-        host_ssh "rm -rf '$R_REPO_DIR'" \
-            || echo "plugin-roundtrip.sh: WARNING: could not remove $VMHOST:$R_REPO_DIR (tmpfs)" >&2
-    fi
+    dut_repo_stop
     if [ -n "$R_KSET_DIR" ]; then
         # dut_key (if the DUT_KERNEL_SET install left it behind) is the only
         # secret here -- kernel.txz itself is not.
@@ -329,12 +231,7 @@ EOF
     if [ "$PROVISIONED" = 1 ]; then
         ./run.sh dut down
     fi
-    if [ -n "$R_OVL_DIR" ]; then
-        # If qemu somehow survived `down`, unlinking still works: the data
-        # lives only in tmpfs pages, freed when that process exits.
-        host_ssh "if test -f \"$DUT_PIDFILE\" && sudo kill -0 \"\$(sudo cat \"$DUT_PIDFILE\")\" 2>/dev/null; then echo 'plugin-roundtrip.sh: WARNING: dut still running; its overlay is unlinked but held in RAM until qemu exits' >&2; fi; rm -rf '$R_OVL_DIR'" \
-            || echo "plugin-roundtrip.sh: WARNING: could not remove $VMHOST:$R_OVL_DIR (tmpfs)" >&2
-    fi
+    dut_overlay_remove
     exit "$rc"
 }
 trap teardown EXIT
@@ -359,23 +256,7 @@ case "$DUT_PPPOE_USERNAME" in
 esac
 
 # -- this run's throwaway overlay of the never-provisioned base, on tmpfs.
-# Overlays left by a run that was SIGKILLed are removed first (dut is known
-# stopped, so none is in use).
-R_OVL_DIR="$(host_ssh bash -s <<EOF
-set -euo pipefail
-[ "\$(stat -f -c %T /dev/shm)" = tmpfs ] || { echo "/dev/shm on $VMHOST is not tmpfs" >&2; exit 1; }
-[ -f "$DUT_BASE" ] || { echo "$DUT_BASE missing (./fetch-image.sh dut)" >&2; exit 1; }
-rm -rf "$R_OVL_PREFIX".*
-d="\$(mktemp -d "$R_OVL_PREFIX.XXXXXX")"
-chmod 700 "\$d"
-qemu-img create -q -f qcow2 -F qcow2 -b "$DUT_BASE" "\$d/$DUT_VM_NAME-run.qcow2"
-echo "\$d"
-EOF
-)"
-case "$R_OVL_DIR" in
-    "$R_OVL_PREFIX".*) ;;
-    *) echo "plugin-roundtrip.sh: unexpected overlay dir '$R_OVL_DIR'" >&2; R_OVL_DIR=""; exit 1 ;;
-esac
+dut_make_overlay "$DUT_BASE"
 
 ACCOUNT_ADDED=1   # before `add`: a half-done add is still removed at exit
 dut_account_add
