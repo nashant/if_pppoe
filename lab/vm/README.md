@@ -598,7 +598,7 @@ bash -c 'source lab/vm/common.sh && vm_ssh build "cat /home/freebsd/.if_pppoe-la
 **Version.** Build the branch as `--version 0.5.1`. That is the version of the published
 FreeBSD:15 packages the prefetch fetches, so the downgrade guard never sees a newer installed
 version (`pkg version -t` compares equal versions as `=`). Before the upgrade the driver stops
-if the installed `os-if-pppoe` compares `>` to `PUBLISHED_VERSION` (default 0.5.1).
+if the installed `os-if-pppoe` compares `>` to `PUBLISHED_VERSION` (default 0.5.2).
 
 **Published repo.** Also before the upgrade, the driver points `IfPppoe` at the published
 repo. It fetches two files from the Pages site: `client-conf/repos/IfPppoe.conf` (url
