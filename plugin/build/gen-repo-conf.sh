@@ -5,10 +5,9 @@
 # source, docs/pkg-repo.8, commit cd0a561ecc894f3c9811004490d59a5df26c94ad).
 #
 # Published repos are laid out one per FreeBSD ABI, <base>/<ABI>/ (CI:
-# <IF_PPPOE_REPO_URL_BASE>/FreeBSD:14:amd64/ for OPNsense 25.7 and 26.1,
-# .../FreeBSD:15:amd64/ for 26.7). Pass the URL with pkg's own ${ABI}
-# variable left literal (single quotes), so one IfPppoe.conf follows the box
-# across series upgrades:
+# <IF_PPPOE_REPO_URL_BASE>/FreeBSD:15:amd64/ for OPNsense 26.7). Pass the
+# URL with pkg's own ${ABI} variable left literal (single quotes), so one
+# IfPppoe.conf follows the box across series upgrades:
 #
 #   gen-repo-conf.sh --url 'https://<host>/if_pppoe/repo/${ABI}' --pub repo.pub
 #

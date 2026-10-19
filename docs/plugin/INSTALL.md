@@ -6,7 +6,6 @@ Published repos are **one per FreeBSD ABI**, not one per OPNsense series:
 
 | OPNsense series | FreeBSD ABI | Repo path |
 |---|---|---|
-| 25.7, 26.1 | `FreeBSD:14:amd64` | `<base>/FreeBSD:14:amd64/` |
 | 26.7 | `FreeBSD:15:amd64` | `<base>/FreeBSD:15:amd64/` |
 
 The box registers `url: "<base>/${ABI}"` once. pkg expands `${ABI}` itself
@@ -14,9 +13,9 @@ The box registers `url: "<base>/${ABI}"` once. pkg expands `${ABI}` itself
 (e.g. FreeBSD:14:amd64)"; FreeBSD's own `usr.sbin/pkg/FreeBSD.conf.latest`
 uses `pkg+https://pkg.FreeBSD.org/${ABI}/latest` the same way). So:
 
-- **25.7 -> 26.1:** same ABI, same repo, same packages. Nothing to change.
-- **26.1 -> 26.7:** the ABI switches to `FreeBSD:15:amd64`, and pkg follows it
-  to the other repo by itself. A URL without a series segment also avoids
+- **26.1 -> 26.7** (boxes still on a series dropped from CI, see
+  `docs/CI.md#adding-a-version`): the ABI switches to `FreeBSD:15:amd64`,
+  and pkg follows it to the other repo by itself. A URL without a series segment also avoids
   the failure in https://github.com/opnsense/core/issues/10622, where the
   ABI was already `FreeBSD:15:amd64` while the release still said 26.1.
   The installed packages are *not* replaced by the upgrade itself, though:
@@ -25,7 +24,7 @@ uses `pkg+https://pkg.FreeBSD.org/${ABI}/latest` the same way). So:
 `os-if-pppoe` is the same package for every series of an ABI. What gates a
 series is the plugin's `interfaces.inc` hook: `hookctl.php` refuses with
 `refused:anchor` when the anchors don't match. The anchors are
-fixture-tested for 25.7, 25.7.11, 26.1, 26.1.11 and 26.7.4
+fixture-tested for 26.7.4 (and, historically, 25.7, 25.7.11, 26.1 and 26.1.11)
 (`plugin/net/if-pppoe/tests/hook/hookctl_test.sh`).
 
 **Supported kernels.** `if-pppoe-kmod` holds one `if_pppoe.ko` per OPNsense
@@ -170,7 +169,7 @@ one code path.
 ```
 plugin/build/discover-kernels.sh --versions .github/versions.json \
     --out kernels.json --cache /home/freebsd/kernel-sets
-plugin/build/build-all.sh --kernels-json kernels.json --abi FreeBSD:14:amd64 \
+plugin/build/build-all.sh --kernels-json kernels.json --abi FreeBSD:15:amd64 \
     --version 0.4 --out /home/freebsd/out \
     --key /home/freebsd/.if_pppoe-repo-signing.key
 ```
@@ -243,14 +242,14 @@ you run `pkg-build.sh` from (`--local-out` to change that).
 
 ```
 plugin/build/publish-repo.sh --repo-dir <extracted repo.tar.gz dir, or the build VM's --out dir> \
-    --remote-dir /usr/local/www/if_pppoe/repo --abi FreeBSD:14:amd64
+    --remote-dir /usr/local/www/if_pppoe/repo --abi FreeBSD:15:amd64
 ```
 
 `make-repo.sh`'s catalogue is flat, so `publish-repo.sh` puts it under
 `<remote-dir>/<ABI>`. `--abi` is required, because the packages are
 ABI-specific and there is no safe default. Use `--no-abi-subdir` only if
 `--remote-dir` already ends in the ABI segment. Publish one catalogue per
-ABI; 25.7 and 26.1 boxes share the `FreeBSD:14:amd64` one.
+ABI.
 
 `gen-repo-conf.sh --pub` below runs on YOUR machine, but with `pkg-build.sh`
 the signing keypair (`--key`/`--pub`, or `--gen-key`'s freshly generated
@@ -266,7 +265,7 @@ plugin/build/gen-repo-conf.sh --url 'http://<LAB_HOST>/if_pppoe/repo/${ABI}' \
 ```
 
 `${ABI}` in the URL is pkg's own client-side substitution (the box's ABI
-string, e.g. `FreeBSD:14:amd64`); the single quotes keep this shell from
+string, e.g. `FreeBSD:15:amd64`); the single quotes keep this shell from
 expanding it. Never append a series (`.../${ABI}/25.7`): `gen-repo-conf.sh`
 warns about that, because such a URL stops resolving after a series
 upgrade. For a CI release, `client-conf/` is already inside every

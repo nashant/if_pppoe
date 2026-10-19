@@ -1,5 +1,5 @@
 Replaces mpd5 with an in-kernel PPPoE driver (if_pppoe(4)) for eligible
-PPPoE WAN interfaces, on OPNsense 25.7.x / FreeBSD 14.3, amd64, standalone
+PPPoE WAN interfaces, on OPNsense 26.7.x / FreeBSD 15.1, amd64, standalone
 boxes only (no CARP/HA).
 
 This plugin only records whether kernel mode is desired; applying a change

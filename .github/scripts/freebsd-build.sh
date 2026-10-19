@@ -143,8 +143,8 @@ phase_package() {
 		cp "$OUT_DIR"/pkg/*.pkg "$REPO_DIR/"
 		sh plugin/build/make-repo.sh --repo-dir "$REPO_DIR" --key "$keydir/repo.key" --pub "$keydir/repo.pub"
 		# One URL for every series and ABI: pkg expands ${ABI} on the
-		# client, so 25.7 -> 26.1 keeps the repo and 26.7 switches to
-		# FreeBSD:15:amd64/ by itself. Keep it literal here.
+		# client, so a series upgrade within an ABI keeps the repo and a
+		# new ABI switches to its own <ABI>/ by itself. Keep it literal here.
 		# shellcheck disable=SC2016
 		sh plugin/build/gen-repo-conf.sh --url "${IF_PPPOE_REPO_URL_BASE%/}"'/${ABI}' \
 			--pub "$keydir/repo.pub" --out-dir "$WORK/repo/client-conf"

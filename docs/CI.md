@@ -157,8 +157,8 @@ Output `kernels.json` is an array sorted by `abi`, `series`, `version`,
 deduplicated by `build_id`:
 
 ```json
-[{"series":"25.7","version":"25.7.8","abi":"FreeBSD:14:amd64","freebsd_version":"14.3",
-  "src_tag":"25.7.8","url":"https://pkg.opnsense.org/FreeBSD:14:amd64/25.7/sets/kernel-25.7.8-amd64.txz",
+[{"series":"26.7","version":"26.7.4","abi":"FreeBSD:15:amd64","freebsd_version":"15.1",
+  "src_tag":"26.7.4","url":"https://pkg.opnsense.org/FreeBSD:15:amd64/26.7/sets/kernel-26.7.4-amd64.txz",
   "sha256":"<64 hex>","build_id":"<40 hex>","config_hash":"<64 hex>"}]
 ```
 
@@ -176,16 +176,16 @@ default/newest kernel; pin drift is informational.
 
 ```json
 {
-  "opnsense_series": "25.7",          // version prefix discovery matches; opnsense/tools config dir; the lowest series of an ABI is plugins.mk PLUGIN_ABIS
+  "opnsense_series": "26.7",          // version prefix discovery matches; opnsense/tools config dir; the lowest series of an ABI is plugins.mk PLUGIN_ABIS
   "status": "supported",              // supported | experimental (an ABI is supported if any of its entries is)
-  "freebsd_version": "14.3",          // FreeBSD VM release (vmactions) + smoke cloud image (the ABI's newest is used); must equal the kernel's
-  "freebsd_abi": "FreeBSD:14:amd64",  // groups entries into one package + one repo <base>/<ABI>/; must equal each discovered kernel's own ABI
-  "php_version": "8.3",               // plugin PHP (PLUGIN_PHP=83) + php:<v>-cli test image
-  "python_version": "3.11",           // PLUGIN_PYTHON (plain FreeBSD VM cannot probe it)
+  "freebsd_version": "15.1",          // FreeBSD VM release (vmactions) + smoke cloud image (the ABI's newest is used); must equal the kernel's
+  "freebsd_abi": "FreeBSD:15:amd64",  // groups entries into one package + one repo <base>/<ABI>/; must equal each discovered kernel's own ABI
+  "php_version": "8.5",               // plugin PHP (PLUGIN_PHP=85) + php:<v>-cli test image
+  "python_version": "3.13",           // PLUGIN_PYTHON (plain FreeBSD VM cannot probe it)
   "kernconf": "SMP",                  // opnsense/tools config/<series>/<kernconf>
-  "opnsense_core_tag": "25.7.11",     // opnsense/core release; also the opnsense/tools tag
-  "kernel_sets_url": "https://pkg.opnsense.org/FreeBSD:14:amd64/25.7/sets/", // discovery lists every kernel-<series>*.txz here
-  "opnsense_src_tag": "25.7.11",      // newest kernel / toolchain default; kernel-<tag>-amd64.txz in kernel_sets_url
+  "opnsense_core_tag": "26.7.4",      // opnsense/core release; also the opnsense/tools tag
+  "kernel_sets_url": "https://pkg.opnsense.org/FreeBSD:15:amd64/26.7/sets/", // discovery lists every kernel-<series>*.txz here
+  "opnsense_src_tag": "26.7.4",       // newest kernel / toolchain default; kernel-<tag>-amd64.txz in kernel_sets_url
   "require_features": false           // no longer read: smoke.yml's require-features input (default true) applies to every kernel
 }
 ```
@@ -273,14 +273,22 @@ tag's `sys/conf/newvers.sh`):
    `if_spppsubr.c` through `net/if_var.h`, was found.
 2. Open a PR. CI builds and smokes the new entry's newest kernel, and a
    failure there never blocks the PR as long as its ABI is experimental. A
-   new series of an existing, supported ABI (e.g. a 26.1 successor on
-   FreeBSD 14) joins that ABI's package and repo, so its kernels gate like
+   new series of an existing, supported ABI (e.g. a 26.7 successor on
+   FreeBSD 15) joins that ABI's package and repo, so its kernels gate like
    the others.
 3. Once the driver builds and smokes cleanly on that series, change the
    entry to `supported`. From then on it gates PRs, and its ABI's repo is
    required in releases.
 4. Remove an entry when the series is no longer supported. Its kernels then
    drop out of discovery and so out of the next release's package.
+
+   25.7 and 26.1 (`FreeBSD:14:amd64`) were removed on 2026-10-19 as EOL
+   upstream (last tags 25.7.11 and 26.1.11), and the FreeBSD:14 smoke could
+   no longer fetch its 14.3 VM image. The next code release drops the
+   FreeBSD:14 catalogue from Pages, so 25.7/26.1 boxes get no further
+   updates. Their installed kmod keeps working, and boxes on plugin >= 0.5.2
+   still upgrade to 26.7 via the prefetch (`abi-heal.sh` fetches the new
+   ABI's catalogue).
 
 nightly.yml opens a "New OPNsense series available" issue when opnsense/core
 has an `X.Y` tag newer than every entry. Renovate never proposes cross-series
@@ -421,7 +429,7 @@ Merging appends; the newest result per key wins.
 
 ```json
 {"schema":1,"results":[
-  {"build_id":"…","kmod_src":"<sha256>","version":"25.7.8","abi":"FreeBSD:14:amd64",
+  {"build_id":"…","kmod_src":"<sha256>","version":"26.7.4","abi":"FreeBSD:15:amd64",
    "result":"pass|fail","detail":"kldload|clone|panic|…","ko_sha256":"…","run":"<run url>","at":"<iso8601>"}]}
 ```
 
@@ -662,7 +670,7 @@ latest). `pages-site.sh` downloads every `if_pppoe-repo-<slug>.tar.gz` asset
 plus `kernels.json`, `compat.json` and `coverage.json`, and builds:
 
 ```
-<ABI>/          one signed catalogue per FreeBSD ABI (FreeBSD:14:amd64/, FreeBSD:15:amd64/)
+<ABI>/          one signed catalogue per FreeBSD ABI (FreeBSD:15:amd64/)
 client-conf/    one set for all ABIs (IfPppoe.conf url <base>/${ABI}, fingerprint, IfPppoe.pub)
 kernels.json  compat.json  coverage.json
 index.html      the ABIs and the kernel versions each covers
@@ -675,7 +683,7 @@ Release with `GITHUB_TOKEN`, and events created with `GITHUB_TOKEN` do not
 start other workflows; it also runs on the default branch, which the
 `github-pages` environment's branch rules have to allow, as they must for
 nightly's scheduled run on `main` (not checked against a real repo yet).
-GitHub serves the `:` in `FreeBSD:14:amd64` paths as-is; this has not been
+GitHub serves the `:` in `FreeBSD:15:amd64` paths as-is; this has not been
 tried against a real Pages site yet.
 
 There is no migration from the earlier `<ABI>/<series>/` layout: no public
@@ -709,8 +717,7 @@ beyond installing it) or through `renovate.yml`.
 No run has happened yet. These numbers are estimates for 2-vCPU
 `ubuntu-24.04` hosted runners. The real figures will show up in
 `build-info.json` `timings_s` and in the job durations. The kernel counts are
-from the sets listings (2026-09-28): 7 kernels for 25.7, 8 for 26.1 and 4 for
-26.7, so about 19 build_ids.
+from the sets listings (2026-09-28): 4 kernels for 26.7, so about 4 build_ids.
 
 | Job | Estimate |
 |---|---|
@@ -769,5 +776,5 @@ docker run --rm -v "$PWD:/r:ro" -w /r php:8.3-cli sh plugin/net/if-pppoe/tests/e
 
 `freebsd-build.sh` runs in any FreeBSD VM of the right release, for example
 the lab `build` VM. Export the fields of one versions.json entry in
-upper-case (`OPNSENSE_SERIES=25.7 …`) and run it from the repo root.
+upper-case (`OPNSENSE_SERIES=26.7 …`) and run it from the repo root.
 
