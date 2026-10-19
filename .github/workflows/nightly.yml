@@ -147,7 +147,7 @@ jobs:
             echo
             if [ -n "$new" ]; then
               echo "New build_ids:"
-              jq -r --arg n " $new " '.[] | select($n | contains(" \(.build_id) ")) | "- \(.version) (\(.abi)) `\(.build_id)`"' "$cur"
+              jq -r --arg n " $new " '.[] | select(.build_id as $b | $n | contains(" \($b) ")) | "- \(.version) (\(.abi)) `\(.build_id)`"' "$cur"
             else
               echo "No new OPNsense kernel since $LATEST."
             fi
