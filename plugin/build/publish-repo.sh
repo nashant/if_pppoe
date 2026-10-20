@@ -4,9 +4,9 @@
 #
 # Repos are published one per FreeBSD ABI: clients register the URL with
 # pkg's literal ${ABI} substitution (<base>/${ABI}), and the same catalogue
-# serves every OPNsense series of that ABI (25.7 and 26.1 on FreeBSD:14:amd64,
-# 26.7 on FreeBSD:15:amd64). make-repo.sh's catalogue is flat, so this
-# publishes it under <remote-dir>/<ABI>. --abi is required (the package set
+# serves every OPNsense series of that ABI (26.7 on FreeBSD:15:amd64).
+# make-repo.sh's catalogue is flat, so this publishes it under
+# <remote-dir>/<ABI>. --abi is required (the package set
 # is ABI-specific; there is no safe default), unless --no-abi-subdir says
 # --remote-dir already ends in the ABI segment.
 set -eu
@@ -39,7 +39,7 @@ done
 { [ -n "$REPO_DIR" ] && [ -n "$REMOTE_DIR" ]; } || usage
 [ -n "$HOST" ] || { echo "publish-repo.sh: no host set: pass --host or set PUBLISH_HOST" >&2; usage; }
 if [ "$ABI_SUBDIR" -eq 1 ]; then
-	[ -n "$ABI" ] || { echo "publish-repo.sh: pass --abi (e.g. FreeBSD:14:amd64 for OPNsense 25.7/26.1, FreeBSD:15:amd64 for 26.7)" >&2; usage; }
+	[ -n "$ABI" ] || { echo "publish-repo.sh: pass --abi (e.g. FreeBSD:15:amd64)" >&2; usage; }
 	case "$ABI" in
 	FreeBSD:[0-9]*:*) ;;
 	*) echo "publish-repo.sh: --abi must look like FreeBSD:<major>:<arch>, got: $ABI" >&2; exit 1 ;;

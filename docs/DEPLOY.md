@@ -1,6 +1,7 @@
 # Deploying the in-kernel PPPoE driver on an OPNsense router
 
-Target: OPNsense 25.7 (FreeBSD 14.3, kernel `SMP` = GENERIC+RSS+VIMAGE).
+Target: OPNsense 26.7 (FreeBSD 15.1, kernel `SMP` = GENERIC+RSS+VIMAGE). The
+hands-on steps below were executed on the 25.7 / FreeBSD 14.3 lab (see §6).
 The plugin replaces the userland `mpd5` PPPoE client with the in-kernel
 `if_pppoe` driver, driven from **Services → In-kernel PPPoE (if_pppoe)**.
 
@@ -335,17 +336,16 @@ also happens in T06, strictly after the 24h soak completes, so it cannot
 disturb the soak's session. The full on-box Disable round-trip is verified
 on-box in S06.*
 
-## 6. OPNsense 26.7 / FreeBSD 15.1 build note
+## 6. Building for OPNsense 26.7 / FreeBSD 15.1
 
-Everything above targets OPNsense **25.7** on FreeBSD **14.3** (`SMP`).
-When the production router moves to OPNsense **26.7 / FreeBSD 15.1**, the
-kmod and `pppoectl` must be rebuilt against that kernel's build dir —
-the module is kernel-build-specific (§0.2) and 14.3-built binaries will not
-load on a 15.1 kernel. The build path is the same
-(`lab/vm/build-module.sh` against the collected 26.7/15.1 kernel, then
-`lab/pkg/build-os-pppoe.sh` to repackage); the plugin shell/PHP layer is
-kernel-independent. This is the S07 packaging slice's job — nothing on the
-25.7 path changes until then.
+Everything above was executed against OPNsense **25.7** on FreeBSD
+**14.3** (`SMP`), which is no longer built or published. For the supported
+OPNsense **26.7 / FreeBSD 15.1**, the kmod and `pppoectl` must be rebuilt
+against that kernel's build dir — the module is kernel-build-specific
+(§0.2) and 14.3-built binaries will not load on a 15.1 kernel. The build
+path is the same (`lab/vm/build-module.sh` against the collected 26.7/15.1
+kernel, then `lab/pkg/build-os-pppoe.sh` to repackage); the plugin
+shell/PHP layer is kernel-independent.
 
 ## Verification checklist (S04-T04, 2026-09-25)
 

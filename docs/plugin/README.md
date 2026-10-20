@@ -11,7 +11,7 @@ v1 decisions (2026-09-27):
   - manual fallback when there's no session;
   - automatic fallback to mpd5 on a kmod or kernel mismatch and on boot strikes;
   - re-apply immediately after core updates;
-  - OPNsense 25.7.x / FreeBSD 14.3 only for now;
+  - OPNsense 26.7.x / FreeBSD 15.1 only;
   - dual-stack IPv6;
   - in-kernel MSS clamp.
 
