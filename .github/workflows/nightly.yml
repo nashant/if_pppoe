@@ -81,7 +81,7 @@ jobs:
         id: rel
         run: |
           set -euo pipefail
-          latest=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+          latest=$(sh .github/scripts/latest-release.sh)
           if [ -z "$latest" ]; then
             echo "::notice::no release yet; nothing to refresh"
             exit 0
