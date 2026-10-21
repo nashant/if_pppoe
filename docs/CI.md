@@ -43,6 +43,7 @@ with) `p4/plugin`.
 | `.github/scripts/matrix.sh` | versions.json to `{"include":[...]}`: `abi` mode (one row per FreeBSD ABI), `build` (one row per entry), `php` (one row per PHP version) |
 | `.github/scripts/discover-kernels.sh` | CI wrapper around `plugin/build/discover-kernels.sh` (kernels.json, groups, the set-cache key) |
 | `.github/scripts/resolve-latest.sh` | nightly: newest released core tag, plus the matching src tag that has a kernel set |
+| `.github/scripts/latest-release.sh` | Tag of the release GitHub marks Latest (nightly, publish, pages); not `gh release list`, which sorts a refresh behind its base release |
 | `.github/scripts/freebsd-build.sh` | Runs inside the FreeBSD VM: `--phase kmods` (userland + `build-all.sh --phase kmods`) and `--phase package` (packages, signed `<ABI>/` repo) |
 | `.github/scripts/smoke-plan.sh` / `compat.sh` | Which kernels to smoke, sharded; the `compat.json` result cache (lookup, merge, pass/fail lists) |
 | `.github/scripts/smoke-vm.sh` / `smoke-guest.sh` | KVM smoke on the ubuntu runner (one guest per shard, one reboot per kernel), and the guest-side checks |
@@ -599,7 +600,8 @@ patch, its build_id is not in any `.ko` yet, and boxes that install it fall
 back to mpd5 at the next boot. nightly.yml closes that gap without a code
 change:
 
-1. `resolve` finds the latest release (`gh release list`), its code release
+1. `resolve` finds the latest release (the one GitHub marks Latest, via
+   `latest-release.sh`), its code release
    `v<ver>` (the tag without `_N`) and that tag's commit, and downloads the
    release's `kernels.json`. It checks out `v<ver>` and runs discovery from
    that tree (its versions.json and discovery code), with `--union` over the

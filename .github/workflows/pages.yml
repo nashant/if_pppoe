@@ -53,7 +53,7 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          latest() { gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'; }
+          latest() { sh .github/scripts/latest-release.sh; }
           if [ -n "$INPUT_TAG" ]; then
             # workflow_dispatch, or workflow_call (which keeps the caller's event name).
             tag=$INPUT_TAG

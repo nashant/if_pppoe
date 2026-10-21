@@ -99,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$TARGET" ]; then
-            latest=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+            latest=$(sh .github/scripts/latest-release.sh)
             want=$(sh .github/scripts/refresh-plan.sh base-version "$TAG")
             have=$([ -z "$latest" ] || sh .github/scripts/refresh-plan.sh base-version "$latest")
             if [ "$have" != "$want" ]; then
